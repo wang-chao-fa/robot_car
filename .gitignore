@@ -1,0 +1,29 @@
+# Keil MDK compiled outputs and listings
+*.o
+*.d
+*.crf
+*.axf
+*.lnp
+*.lst
+*.map
+*.dep
+*.htm
+*.build_log.htm
+*.iex
+*.htm
+*.lnp
+*.sct
+JLinkLog.txt
+
+# Keil User Specific Files
+*.uvguix.*
+*.uvoptsx
+
+# Folder outputs
+MDK-ARM/robot_car/
+MDK-ARM/DebugConfig/
+MDK-ARM/RTE/
+
+# Temporary / Backup files
+*.~*
+*.bak
