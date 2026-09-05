@@ -29,6 +29,13 @@ sudo ufw disable 2>/dev/null || true
 # 自动给所有 USB 串口赋予读写权限
 sudo chmod 666 /dev/ttyUSB* /dev/ttyACM* 2>/dev/null || true
 
+echo "=== 0. 自动重置并刷新雷达以太网口 (eth0 / 192.168.0.10) ==="
+sudo ip link set eth0 down 2>/dev/null || true
+sleep 1
+sudo ip link set eth0 up 2>/dev/null || true
+sudo ip addr add 192.168.0.10/24 dev eth0 2>/dev/null || true
+sleep 1
+
 echo "=== 1. 启动 STM32 底盘串口通信节点 (/odom) ==="
 ros2 run base_control base_control_node > /dev/null 2>&1 &
 sleep 2
