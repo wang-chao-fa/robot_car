@@ -1,0 +1,28 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Value: true
+    - Class: rviz_default_plugins/Odometry
+      Name: Odometry
+      Value: true
+      Topic:
+        Value: /odom
+      Shape: Axes
+    - Class: rviz_default_plugins/TF
+      Name: TF
+      Value: true
+      Show Axes: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: odom
+  Name: root
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Name: Current
+      Target Frame: <Fixed Frame>

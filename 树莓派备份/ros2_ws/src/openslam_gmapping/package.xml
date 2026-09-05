@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>openslam_gmapping</name>
+  <version>0.2.1</version>
+  <description>ROS 2 port of OpenSlam's Gmapping</description>
+
+  <maintainer email="ros-orphaned-packages@googlegroups.com">ROS Orphaned Package Maintainers</maintainer>
+  <license>BSD</license>
+
+  <url type="website">http://openslam.org/gmapping</url>
+  <url type="repository">https://github.com/ros-perception/openslam_gmapping</url>
+  <url type="bugtracker">https://github.com/ros-perception/openslam_gmapping/issues</url>
+
+  <author>Cyrill Stachniss</author>
+  <author>Udo Frese</author>
+  <author>Giorgio Grisetti</author>
+  <author>Wolfram Burgard</author>
+
+  <!-- ==== 关键修改部分开始 ==== -->
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- ROS 2 核心依赖 -->
+  <depend>rclcpp</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>nav_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+  <!-- ==== 关键修改部分结束 ==== -->
+</package>

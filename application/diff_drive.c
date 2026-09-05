@@ -63,3 +63,85 @@ void DiffDrive_Update(int16_t throttle_mapped, int16_t steering_mapped,
     kinco_set_velocity(hcan, motor_left,  left_dec);
     kinco_set_velocity(hcan, motor_right, right_dec);
 }
+
+/**
+  * @brief  根据左右轮编码器反馈解算小车整体线速度与角速度 (供 ROS 里程计使用)
+  * @param  motor_left:  左电机结构体指针
+  * @param  motor_right: 右电机结构体指针
+  * @param  out_linear_v:  输出中心线速度 (m/s)
+  * @param  out_angular_w: 输出旋转角速度 (rad/s, 逆时针/左转为正)
+  */
+void DiffDrive_GetOdomVelocity(kinco_motor_t *motor_left, kinco_motor_t *motor_right,
+                               float *out_linear_v, float *out_angular_w)
+{
+    if (motor_left == NULL || motor_right == NULL || out_linear_v == NULL || out_angular_w == NULL)
+    {
+        return;
+    }
+
+    /* 1. 读取电机反馈速度转换为 RPM */
+    int32_t raw_left_rpm  = kinco_dec_to_rpm(motor_left->actual_velocity,  ENCODER_RESOLUTION);
+    int32_t raw_right_rpm = kinco_dec_to_rpm(motor_right->actual_velocity, ENCODER_RESOLUTION);
+
+    /* 2. 镜像安装方向修正 (使正转统一对应物理小车前进) */
+#if MOTOR_LEFT_INVERT
+    raw_left_rpm = -raw_left_rpm;
+#endif
+
+    /* 3. 换算左右轮实际物理线速度 (m/s) */
+    float v_left  = (float)raw_left_rpm  * RPM_TO_MS_RATIO;
+    float v_right = (float)raw_right_rpm * RPM_TO_MS_RATIO;
+
+    /* 4. 差速正运动解算: 中心线速度 v (m/s) 与 角速度 w (rad/s) */
+    *out_linear_v  = -((v_right + v_left) / 2.0f);
+    *out_angular_w = (v_right - v_left) / ROBOT_WHEEL_TRACK;
+}
+
+/**
+  * @brief  根据 ROS 的期望线速度 linear_v 与角速度 angular_w 逆解算输出到电机
+  * @param  linear_v:  期望线速度 (m/s)
+  * @param  angular_w: 期望角速度 (rad/s)
+  * @param  motor_left:  左电机结构体指针
+  * @param  motor_right: 右电机结构体指针
+  
+  * @param  hcan:        CAN 句柄
+  */
+void DiffDrive_UpdateFromROS(float linear_v, float angular_w,
+                             kinco_motor_t *motor_left, kinco_motor_t *motor_right,
+                             CAN_HandleTypeDef *hcan)
+{
+    if (motor_left == NULL || motor_right == NULL || hcan == NULL)
+    {
+        return;
+    }
+
+    /* 反转 ROS 线速度，修正正向前进/反向后退方向 */
+    linear_v = -linear_v;
+
+    /* 1. 逆运动学解算左右轮期望线速度 (m/s) */
+    float v_left  = linear_v - (angular_w * ROBOT_WHEEL_TRACK / 2.0f);
+    float v_right = linear_v + (angular_w * ROBOT_WHEEL_TRACK / 2.0f);
+
+    /* 2. 转换为电机期望转速 (RPM) */
+    int32_t left_rpm  = (int32_t)(v_left  / RPM_TO_MS_RATIO);
+    int32_t right_rpm = (int32_t)(v_right / RPM_TO_MS_RATIO);
+
+    /* 3. 限幅 */
+    if (left_rpm  >  MAX_SPEED_RPM) left_rpm  =  MAX_SPEED_RPM;
+    if (left_rpm  < -MAX_SPEED_RPM) left_rpm  = -MAX_SPEED_RPM;
+    if (right_rpm >  MAX_SPEED_RPM) right_rpm =  MAX_SPEED_RPM;
+    if (right_rpm < -MAX_SPEED_RPM) right_rpm = -MAX_SPEED_RPM;
+
+    /* 4. 左电机方向修正 (镜像安装) */
+#if MOTOR_LEFT_INVERT
+    left_rpm = -left_rpm;
+#endif
+
+    /* 5. 转换为驱动器 DEC 单位并下发 */
+    int32_t left_dec  = kinco_rpm_to_dec(left_rpm,  ENCODER_RESOLUTION);
+    int32_t right_dec = kinco_rpm_to_dec(right_rpm, ENCODER_RESOLUTION);
+
+    kinco_set_velocity(hcan, motor_left,  left_dec);
+    kinco_set_velocity(hcan, motor_right, right_dec);
+}
+

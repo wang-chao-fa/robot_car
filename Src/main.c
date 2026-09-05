@@ -98,6 +98,7 @@ int main(void)
     MX_CAN1_Init();
     MX_USART1_UART_Init();
     MX_USART3_UART_Init();
+    MX_USART6_UART_Init();
 
     /* USER CODE BEGIN 2 */
 
@@ -119,6 +120,9 @@ int main(void)
     /* --- 启动 SBUS 接收: 使能 IDLE 中断 + DMA --- */
     __HAL_UART_ENABLE_IT(&huart3, UART_IT_IDLE);
     HAL_UART_Receive_DMA(&huart3, sbus_rx_buf, SBUS_RX_BUF_NUM);
+
+    /* --- 启动 ROS 通信接收中断: 使能 RXNE 接收中断 --- */
+    __HAL_UART_ENABLE_IT(&huart6, UART_IT_RXNE);
 
     /* LED 绿灯亮: 表示初始化完成 */
     HAL_GPIO_WritePin(LED_G_GPIO_Port, LED_G_Pin, GPIO_PIN_RESET);
@@ -154,36 +158,57 @@ int main(void)
         {
             control_tick = now;
 
-            /* --- 失控保护检测 --- */
-            uint8_t failsafe = 0;
-            if ((now - sbus_last_time) > SBUS_FAILSAFE_TIMEOUT_MS)
+            /* --- 遥控器与 ROS 双重控制抢占调度逻辑 --- */
+            int16_t throttle = SBUS_GetChannel_Mapped(RC_CH_THROTTLE);
+            int16_t steering = SBUS_GetChannel_Mapped(RC_CH_STEERING);
+
+            /* 判断遥控器信号状态 */
+            uint8_t sbus_timeout = ((now - sbus_last_time) > SBUS_FAILSAFE_TIMEOUT_MS) ? 1 : 0;
+            /* 判断摇杆是否处于零位死区内 (|映射值| < 30) */
+            uint8_t rc_in_center = (throttle > -30 && throttle < 30 && steering > -30 && steering < 30) ? 1 : 0;
+            /* 判断 ROS 控制指令是否在 500ms 内有效更新 */
+            uint8_t ros_cmd_valid = ((now - g_ros_cmd_last_time) <= 500) ? 1 : 0;
+
+            if (!sbus_timeout && !rc_in_center)
             {
-                /* 遥控信号丢失: 强制停车 */
-                failsafe = 1;
-                kinco_set_velocity(&hcan1, &g_motor_left,  0);
-                kinco_set_velocity(&hcan1, &g_motor_right, 0);
-
-                /* 红灯报警 */
-                HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
-            }
-            else
-            {
-                /* 遥控信号正常: 差速控制 */
-                failsafe = 0;
-
-                int16_t throttle = SBUS_GetChannel_Mapped(RC_CH_THROTTLE);
-                int16_t steering = SBUS_GetChannel_Mapped(RC_CH_STEERING);
-
+                /* 【优先级 1】: 遥控器手动抢占控制 (只要人动摇杆，立刻响应遥控器) */
                 DiffDrive_Update(throttle, steering,
                                  &g_motor_left, &g_motor_right,
                                  &hcan1);
 
-                /* 正常运行: 绿灯常亮 */
-                HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);  // 红灯灭
+                HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);   // 红灯灭
                 HAL_GPIO_WritePin(LED_G_GPIO_Port, LED_G_Pin, GPIO_PIN_RESET); // 绿灯亮
             }
+            else if (ros_cmd_valid)
+            {
+                /* 【优先级 2】: ROS 自动驾驶指令控制 (摇杆归中且 ROS 指令有效) */
+                DiffDrive_UpdateFromROS(g_ros_cmd_v, g_ros_cmd_w,
+                                        &g_motor_left, &g_motor_right,
+                                        &hcan1);
 
-            (void)failsafe; // 防止未使用警告
+                HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);   // 红灯灭
+                HAL_GPIO_WritePin(LED_G_GPIO_Port, LED_G_Pin, GPIO_PIN_RESET); // 绿灯亮
+            }
+            else
+            {
+                /* 【优先级 3】: 遥控器中位/断连 且 ROS 无有效指令 -> 强制停车 */
+                kinco_set_velocity(&hcan1, &g_motor_left,  0);
+                kinco_set_velocity(&hcan1, &g_motor_right, 0);
+
+                if (sbus_timeout)
+                {
+                    HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET); // 红灯警报
+                }
+            }
+
+            /* --- 解算并通过 USART6 发送 ROS 轮式里程计所需的速度数据 (50Hz) --- */
+            float ros_linear_v  = 0.0f;
+            float ros_angular_w = 0.0f;
+            DiffDrive_GetOdomVelocity(&g_motor_left, &g_motor_right, &ros_linear_v, &ros_angular_w);
+
+            static uint8_t ros_tx_buf[64];
+            uint16_t ros_len = sprintf((char *)ros_tx_buf, "$ODOM,%.3f,%.3f\r\n", ros_linear_v, ros_angular_w);
+            HAL_UART_Transmit(&huart6, ros_tx_buf, ros_len, 20);
         }
 
         /* ======================== 调试打印 (500ms) ====================== */

@@ -76,3 +76,12 @@ void USART3_IRQHandler(void)
     RC_UART_Idle_Callback(&huart3);
     HAL_UART_IRQHandler(&huart3);
 }
+
+/**
+  * @brief  USART6 全局中断 → 接收 ROS $CMD 线速度与角速度指令
+  */
+void USART6_IRQHandler(void)
+{
+    ROS_UART_Rx_Callback(&huart6);
+    HAL_UART_IRQHandler(&huart6);
+}
