@@ -70,7 +70,7 @@ ros2 run pointcloud_to_laserscan pointcloud_to_laserscan_node \
 sleep 2
 
 echo "=== 6. 启动 SLAM 2D 建图引擎 (/map) ==="
-ros2 launch slam_toolbox online_async_launch.py > /tmp/slam.log 2>&1 &
+ros2 launch slam_toolbox online_async_launch.py slam_params_file:=/home/wjzn/slam_toolbox_params.yaml > /tmp/slam.log 2>&1 &
 sleep 3
 
 echo "==================================================="
