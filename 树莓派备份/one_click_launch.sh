@@ -13,8 +13,8 @@ cleanup() {
     exit 0
 }
 
-# 注册信号捕获：Ctrl+C 或 脚本退出时触发 cleanup
-trap cleanup INT TERM EXIT
+# 注册信号捕获：Ctrl+C 时触发 cleanup
+trap cleanup INT TERM
 
 echo "==================================================="
 echo "   树莓派 4B 机器人底盘、雷达、IMU、3D模型、SLAM 与相机一键启动"
@@ -71,7 +71,6 @@ sleep 2
 
 echo "=== 6. 启动 SLAM 2D 建图引擎 (/map) ==="
 ros2 launch slam_toolbox online_async_launch.py slam_params_file:=/home/wjzn/slam_toolbox_params.yaml > /tmp/slam.log 2>&1 &
-sleep 3
 
 echo "==================================================="
 echo "🎉 所有硬件、3D车体模型与 SLAM 建图节点已在后台静默流畅运行！"
@@ -79,5 +78,8 @@ echo "📷 实时画面监视网址: http://192.168.1.108:8080"
 echo "💡 按 Ctrl + C 随时一键秒停所有后台节点！"
 echo "==================================================="
 
-# 保持前台监控
-python3 /home/wjzn/cam_web.py
+# 在后台启动视频流服务 (就算相机未接也不会导致节点关停)
+python3 /home/wjzn/cam_web.py > /dev/null 2>&1 &
+
+# 保持前台等待
+wait
