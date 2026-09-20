@@ -27,11 +27,13 @@ extern kinco_motor_t g_motor_throttle;   // ID 6 (油门电机)
 
 /* ---------------- 1. 2号档位电机参数 (Node ID 2, 副变速箱/换向机构) ---------------- */
 #define GEAR2_ABS_ORIGIN_POS      (0)                                          // 2号档位 原点位置 (脉冲)
-#define GEAR2_ABS_TOTAL_SPAN      ((int32_t)(5.0f * ENCODER_RESOLUTION))       // 动作行程 (5圈 = 327680 脉冲)
+#define GEAR2_ABS_TOTAL_SPAN      ((int32_t)(3.0f * ENCODER_RESOLUTION))       // 动作行程 (5圈 = 327680 脉冲)
 #define GEAR2_ABS_FWD_POS         (GEAR2_ABS_ORIGIN_POS + GEAR2_ABS_TOTAL_SPAN)// 前进档目标位置
 #define GEAR2_ABS_REV_POS         (GEAR2_ABS_ORIGIN_POS - GEAR2_ABS_TOTAL_SPAN)// 倒退档目标位置
 #define GEAR2_SPEED_RPM           800   // 换档转速 (RPM)
 #define GEAR2_ACC_RPM_S           1500  // 换档加速度 (RPM/s)
+#define GEAR2_FWD_HOLD_TIME_MS    3000  // 前目标点停留时间 (ms，转到前进目标点后停留时间，之后返回原点)
+#define GEAR2_REV_HOLD_TIME_MS    2000  // 后目标点停留时间 (ms，转到倒退目标点后停留时间，之后返回原点)
 
 /* ---------------- 2. 1号档位电机参数 (Node ID 4, 主变速箱) ---------------- */
 #define GEAR_ABS_ORIGIN_POS       (-2310054)                                   // 1号档位 空档原点位置 (脉冲)

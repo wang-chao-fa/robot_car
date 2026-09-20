@@ -29,5 +29,6 @@ void MDU_Motor_Disable(CAN_HandleTypeDef *hcan);
 void MDU_Motor_SetSpeed(CAN_HandleTypeDef *hcan, float speed_rpm);
 void MDU_Motor_SetAngle(CAN_HandleTypeDef *hcan, float target_angle_deg);
 void MDU_Motor_ProcessCANMessage(uint32_t can_id, const uint8_t *data, uint8_t len);
+void MDU_Motor_Control_Loop(CAN_HandleTypeDef *hcan);
 
 #endif /* MDU_STEERING_MOTOR_H */
