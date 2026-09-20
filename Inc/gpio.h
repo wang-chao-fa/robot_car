@@ -1,11 +1,11 @@
 /**
   ******************************************************************************
-  * @file       gpio.h
-  * @brief      GPIO header for robot_car
+  * @file    gpio.h
+  * @brief   GPIO 引脚配置与控制函数声明
   ******************************************************************************
   */
-#ifndef __GPIO_H
-#define __GPIO_H
+#ifndef __GPIO_H__
+#define __GPIO_H__
 
 #ifdef __cplusplus
 extern "C" {
@@ -19,4 +19,4 @@ void MX_GPIO_Init(void);
 }
 #endif
 
-#endif /* __GPIO_H */
+#endif /* __GPIO_H__ */

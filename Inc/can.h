@@ -1,11 +1,11 @@
 /**
   ******************************************************************************
-  * @file       can.h
-  * @brief      CAN peripheral initialization for robot_car
+  * @file    can.h
+  * @brief   CAN1 接口初始化与参数定义
   ******************************************************************************
   */
-#ifndef __CAN_H
-#define __CAN_H
+#ifndef __CAN_H__
+#define __CAN_H__
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,4 +21,4 @@ void MX_CAN1_Init(void);
 }
 #endif
 
-#endif /* __CAN_H */
+#endif /* __CAN_H__ */

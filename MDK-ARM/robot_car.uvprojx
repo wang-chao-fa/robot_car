@@ -10,9 +10,9 @@
       <TargetName>robot_car</TargetName>
       <ToolsetNumber>0x4</ToolsetNumber>
       <ToolsetName>ARM-ADS</ToolsetName>
-      <pArmCC>6150000::V6.15::ARMCLANG</pArmCC>
+      <pArmCC>5060960::V5.06 update 7 (build 960)::.\ARMCC</pArmCC>
       <pCCUsed>5060960::V5.06 update 7 (build 960)::.\ARMCC</pCCUsed>
-      <uAC6>1</uAC6>
+      <uAC6>0</uAC6>
       <TargetOption>
         <TargetCommonOption>
           <Device>STM32F407IGHx</Device>
@@ -314,7 +314,7 @@
           </ArmAdsMisc>
           <Cads>
             <interw>1</interw>
-            <Optim>2</Optim>
+            <Optim>1</Optim>
             <oTime>0</oTime>
             <SplitLS>0</SplitLS>
             <OneElfS>1</OneElfS>
@@ -323,7 +323,7 @@
             <PlainCh>0</PlainCh>
             <Ropi>0</Ropi>
             <Rwpi>0</Rwpi>
-            <wLevel>3</wLevel>
+            <wLevel>2</wLevel>
             <uThumb>0</uThumb>
             <uSurpInc>0</uSurpInc>
             <uC99>1</uC99>
@@ -555,9 +555,29 @@
               <FilePath>..\application\rc_sbus.c</FilePath>
             </File>
             <File>
-              <FileName>diff_drive.c</FileName>
+              <FileName>tractor_ctrl.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\application\diff_drive.c</FilePath>
+              <FilePath>..\application\tractor_ctrl.c</FilePath>
+            </File>
+            <File>
+              <FileName>relay_output.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\application\relay_output.c</FilePath>
+            </File>
+            <File>
+              <FileName>mdu_steering_motor.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\application\mdu_steering_motor.c</FilePath>
+            </File>
+            <File>
+              <FileName>analog_input.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\application\analog_input.c</FilePath>
+            </File>
+            <File>
+              <FileName>auto_serial_ctrl.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\application\auto_serial_ctrl.c</FilePath>
             </File>
           </Files>
         </Group>
