@@ -12,13 +12,14 @@ static uint8_t can_send_frame(CAN_HandleTypeDef *hcan, uint32_t cob_id, const ui
 {
     if (hcan == NULL || data == NULL) return 1;
 
-    uint32_t timeout = 2000;
-    while (HAL_CAN_GetTxMailboxesFreeLevel(hcan) == 0 && timeout--)
+    /* 保证足够的超时等待时间 (至少 10ms)，确保 CAN 邮箱空出，绝不丢弃任何关键指令 */
+    uint32_t start_tick = HAL_GetTick();
+    while (HAL_CAN_GetTxMailboxesFreeLevel(hcan) == 0)
     {
-    }
-    if (HAL_CAN_GetTxMailboxesFreeLevel(hcan) == 0)
-    {
-        return 1;
+        if (HAL_GetTick() - start_tick > 10)
+        {
+            return 1;
+        }
     }
 
     CAN_TxHeaderTypeDef tx_header;
@@ -159,19 +160,27 @@ void kinco_set_position(CAN_HandleTypeDef *hcan, kinco_motor_t *motor, int32_t p
     if (motor == NULL || hcan == NULL) return;
 
     motor->target_position = pos_counts;
+    motor->last_cmd_time = HAL_GetTick(); // 记录指令下发时间，防止与周期 SDO 轮询读取冲突
 
-    // 1. 设置目标位置 OBJ_TARGET_POSITION (0x607A)
+    // 1. 写入目标位置 OBJ_TARGET_POSITION (0x607A)
     kinco_sdo_write(hcan, motor->node_id, OBJ_TARGET_POSITION, 0, (uint32_t)pos_counts, 4);
+    HAL_Delay(2); // 步科驱动器 SDO 处理间隙 (2ms)，确保驱动器完成 0x607A 解析与应答
 
-    // 2. 准备控制字 -> 触发新位置 (Bit 4=1, Bit 5=1 即 0x003F)
-    uint16_t ctrl_prepare = CMD_ENABLE_OP | CTRL_BIT_CHANGE_IMM;
+    // 2. 如果之前 Bit 4 处于置位状态或驱动器处于应答状态 (Bit 12 = 1)，先下发 0x002F 复位 Bit 4
+    if ((motor->controlword & CTRL_BIT_NEW_POS) || (motor->statusword & 0x1000))
+    {
+        uint16_t ctrl_prepare = CMD_ENABLE_OP | CTRL_BIT_CHANGE_IMM;
+        if (is_relative) ctrl_prepare |= CTRL_BIT_REL_POS;
+        kinco_sdo_write(hcan, motor->node_id, OBJ_CONTROLWORD, 0, ctrl_prepare, 2);
+        HAL_Delay(2); // 确保 Bit 12 复位完成
+    }
+
+    // 3. 准备控制字 -> 产生 Bit 4 上升沿 (0x003F) 触发新位置执行
+    uint16_t ctrl_trigger = CMD_ENABLE_OP | CTRL_BIT_CHANGE_IMM | CTRL_BIT_NEW_POS;
     if (is_relative)
     {
-        ctrl_prepare |= CTRL_BIT_REL_POS;
+        ctrl_trigger |= CTRL_BIT_REL_POS;
     }
-    kinco_sdo_write(hcan, motor->node_id, OBJ_CONTROLWORD, 0, ctrl_prepare, 2);
-
-    uint16_t ctrl_trigger = ctrl_prepare | CTRL_BIT_NEW_POS;
     kinco_sdo_write(hcan, motor->node_id, OBJ_CONTROLWORD, 0, ctrl_trigger, 2);
 
     motor->controlword = ctrl_trigger;
@@ -229,7 +238,26 @@ void kinco_motor_config_sync(CAN_HandleTypeDef *hcan, kinco_motor_t *motor, uint
     }
 }
 
-void kinco_recv_handler(kinco_motor_t *motor, uint32_t std_id, uint8_t *data, uint8_t dlc)
+static void kinco_process_statusword(CAN_HandleTypeDef *hcan, kinco_motor_t *motor, uint16_t sw)
+{
+    motor->statusword = sw;
+    motor->is_fault = (sw & STATUS_FAULT) ? 1 : 0;
+    if ((sw & 0x006F) == 0x0027) motor->is_enabled = 1;
+
+    // CiA 402 Set-point Handshake:
+    // 当驱动器置位 Bit 12 (0x1000: Set-point acknowledge) 确认接收到新目标后，
+    // 主站将控制字 Bit 4 清零 (0x002F)，通知驱动器复位 Bit 12，为下一次新目标触发做好准备
+    if ((sw & 0x1000) && (motor->controlword & CTRL_BIT_NEW_POS))
+    {
+        motor->controlword &= ~CTRL_BIT_NEW_POS;
+        if (hcan != NULL)
+        {
+            kinco_sdo_write(hcan, motor->node_id, OBJ_CONTROLWORD, 0, motor->controlword, 2);
+        }
+    }
+}
+
+void kinco_recv_handler(CAN_HandleTypeDef *hcan, kinco_motor_t *motor, uint32_t std_id, uint8_t *data, uint8_t dlc)
 {
     if (motor == NULL || data == NULL) return;
 
@@ -248,9 +276,7 @@ void kinco_recv_handler(kinco_motor_t *motor, uint32_t std_id, uint8_t *data, ui
             switch (index)
             {
                 case OBJ_STATUSWORD:
-                    motor->statusword = (uint16_t)value;
-                    motor->is_fault = (motor->statusword & STATUS_FAULT) ? 1 : 0;
-                    if ((motor->statusword & 0x006F) == 0x0027) motor->is_enabled = 1;
+                    kinco_process_statusword(hcan, motor, (uint16_t)value);
                     break;
                 case OBJ_ERROR_CODE:
                     motor->error_code = (uint16_t)value;
@@ -282,19 +308,15 @@ void kinco_recv_handler(kinco_motor_t *motor, uint32_t std_id, uint8_t *data, ui
     {
         if (dlc >= 2)
         {
-            motor->statusword = ((uint16_t)data[1] << 8) | (uint16_t)data[0];
-            motor->is_fault = (motor->statusword & STATUS_FAULT) ? 1 : 0;
-            if ((motor->statusword & 0x006F) == 0x0027) motor->is_enabled = 1;
+            kinco_process_statusword(hcan, motor, ((uint16_t)data[1] << 8) | (uint16_t)data[0]);
         }
     }
     else if (std_id == (0x280 + motor->node_id))
     {
         if (dlc >= 6)
         {
-            motor->statusword = ((uint16_t)data[1] << 8) | (uint16_t)data[0];
+            kinco_process_statusword(hcan, motor, ((uint16_t)data[1] << 8) | (uint16_t)data[0]);
             motor->actual_position = (int32_t)(((uint32_t)data[5] << 24) | ((uint32_t)data[4] << 16) | ((uint32_t)data[3] << 8) | (uint32_t)data[2]);
-            motor->is_fault = (motor->statusword & STATUS_FAULT) ? 1 : 0;
-            if ((motor->statusword & 0x006F) == 0x0027) motor->is_enabled = 1;
 
             if (!motor->home_captured)
             {
@@ -308,10 +330,8 @@ void kinco_recv_handler(kinco_motor_t *motor, uint32_t std_id, uint8_t *data, ui
     {
         if (dlc >= 6)
         {
-            motor->statusword = ((uint16_t)data[1] << 8) | (uint16_t)data[0];
+            kinco_process_statusword(hcan, motor, ((uint16_t)data[1] << 8) | (uint16_t)data[0]);
             motor->actual_velocity = (int32_t)(((uint32_t)data[5] << 24) | ((uint32_t)data[4] << 16) | ((uint32_t)data[3] << 8) | (uint32_t)data[2]);
-            motor->is_fault = (motor->statusword & STATUS_FAULT) ? 1 : 0;
-            if ((motor->statusword & 0x006F) == 0x0027) motor->is_enabled = 1;
         }
     }
 }
@@ -340,9 +360,9 @@ void kinco_control_loop(CAN_HandleTypeDef *hcan, kinco_motor_t *motor)
         kinco_sdo_read(hcan, motor->node_id, OBJ_STATUSWORD, 0);
     }
 
-    /* 错峰 SDO 轮询: 避免 5 台电机在同一个毫秒集中突发 CAN 请求 */
-    uint32_t offset = ((uint32_t)motor->node_id * 20) % 100;
-    if ((tick - motor->last_cmd_time >= 100) || ((tick % 100 == offset) && (tick - motor->last_cmd_time >= 80)))
+    /* 错峰 SDO 轮询: 避免 5 台电机集中突发，并在位置指令下发后静默 200ms 避免 SDO 冲突 */
+    uint32_t offset = ((uint32_t)motor->node_id * 30) % 150;
+    if ((tick - motor->last_cmd_time >= 200) && (tick % 150 == offset))
     {
         motor->last_cmd_time = tick;
         uint8_t step = ((tick / 100) + (uint32_t)motor->node_id * 3) % 4;

@@ -53,11 +53,11 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
         if (rx_header.IDE == CAN_ID_STD)
         {
             uint8_t node_id = (uint8_t)(can_id & 0x7F);
-            if (node_id == 2)      kinco_recv_handler(&g_motor_gearshift2, can_id, rx_data, dlc);
-            else if (node_id == 3) kinco_recv_handler(&g_motor_brake, can_id, rx_data, dlc);
-            else if (node_id == 4) kinco_recv_handler(&g_motor_gearshift, can_id, rx_data, dlc);
-            else if (node_id == 5) kinco_recv_handler(&g_motor_clutch, can_id, rx_data, dlc);
-            else if (node_id == 6) kinco_recv_handler(&g_motor_throttle, can_id, rx_data, dlc);
+            if (node_id == 2)      kinco_recv_handler(hcan, &g_motor_gearshift2, can_id, rx_data, dlc);
+            else if (node_id == 3) kinco_recv_handler(hcan, &g_motor_brake, can_id, rx_data, dlc);
+            else if (node_id == 4) kinco_recv_handler(hcan, &g_motor_gearshift, can_id, rx_data, dlc);
+            else if (node_id == 5) kinco_recv_handler(hcan, &g_motor_clutch, can_id, rx_data, dlc);
+            else if (node_id == 6) kinco_recv_handler(hcan, &g_motor_throttle, can_id, rx_data, dlc);
         }
     }
 }

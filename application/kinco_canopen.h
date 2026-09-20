@@ -114,7 +114,7 @@ void kinco_set_torque(CAN_HandleTypeDef *hcan, kinco_motor_t *motor, int16_t tor
 void kinco_set_position(CAN_HandleTypeDef *hcan, kinco_motor_t *motor, int32_t pos_counts, uint8_t is_relative);
 void kinco_set_profile_velocity_custom(CAN_HandleTypeDef *hcan, kinco_motor_t *motor, uint32_t speed_rpm, uint32_t acc_rpm_s, uint32_t dec_rpm_s);
 void kinco_motor_config_sync(CAN_HandleTypeDef *hcan, kinco_motor_t *motor, uint32_t speed_rpm, uint32_t acc_rpm_s, uint32_t dec_rpm_s);
-void kinco_recv_handler(kinco_motor_t *motor, uint32_t std_id, uint8_t *data, uint8_t dlc);
+void kinco_recv_handler(CAN_HandleTypeDef *hcan, kinco_motor_t *motor, uint32_t std_id, uint8_t *data, uint8_t dlc);
 void kinco_control_loop(CAN_HandleTypeDef *hcan, kinco_motor_t *motor);
 int32_t kinco_rpm_to_dec(int32_t rpm, uint32_t encoder_res);
 int32_t kinco_dec_to_rpm(int32_t dec, uint32_t encoder_res);

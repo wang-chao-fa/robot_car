@@ -1,7 +1,7 @@
 /**
   ******************************************************************************
   * @file       tractor_ctrl.c
-  * @brief      拖拉机改装核心控制实现
+  * @brief      拖拉机改装核心控制实现 (带指令握手与自动重发机制)
   ******************************************************************************
   */
 #include "tractor_ctrl.h"
@@ -100,8 +100,10 @@ void TractorControl_ExecuteDemand(CAN_HandleTypeDef *hcan, const tractor_demand_
     if (hcan == NULL || demand == NULL) return;
     uint32_t now = HAL_GetTick();
 
-    /* 1. 1号挂挡电机 (ID 4) */
-    static uint8_t last_gear_pos = 0xFF;
+    /* 1. 1号挂挡电机 (ID 4: 具备 100ms 自动重试防漏发机制) */
+    static uint8_t last_gear_demand = 0xFF;
+    static uint32_t last_gear_send_time = 0;
+
     if (g_motor_gearshift.is_enabled && !g_motor_gearshift.is_fault)
     {
         int32_t gear_target = GEAR_ABS_ORIGIN_POS;
@@ -109,19 +111,25 @@ void TractorControl_ExecuteDemand(CAN_HandleTypeDef *hcan, const tractor_demand_
         else if (demand->gear == 2) gear_target = GEAR_ABS_REV_POS;
         else                        gear_target = GEAR_ABS_ORIGIN_POS;
 
-        if (demand->gear != last_gear_pos)
+        g_motor_gearshift.target_position = gear_target;
+
+        int32_t pos_err = labs(g_motor_gearshift.actual_position - gear_target);
+        uint8_t demand_changed = (demand->gear != last_gear_demand);
+
+        // 当档位开关改变，或者电机未到位且未移动(可能丢包)超过 100ms，自动触发/重试发送
+        if (demand_changed || (pos_err > 5000 && labs(g_motor_gearshift.actual_velocity) < 5 && (now - last_gear_send_time >= 300)))
         {
-            last_gear_pos = demand->gear;
-            g_motor_gearshift.last_sent_position = 0x7FFFFFFF;
+            last_gear_demand = demand->gear;
+            last_gear_send_time = now;
             kinco_set_position(hcan, &g_motor_gearshift, gear_target, 0);
         }
     }
     else
     {
-        last_gear_pos = 0xFF;
+        last_gear_demand = 0xFF;
     }
 
-    /* 2. 2号挂挡电机 (ID 2: 到位自动返回原点) */
+    /* 2. 2号挂挡电机 (ID 2: 到位自动返回原点，带防卡死与状态机重试) */
     typedef enum {
         GEAR2_STATE_IDLE = 0,
         GEAR2_STATE_MOVING_TO_TARGET,
@@ -131,42 +139,63 @@ void TractorControl_ExecuteDemand(CAN_HandleTypeDef *hcan, const tractor_demand_
     static gear2_state_e s_gear2_state = GEAR2_STATE_IDLE;
     static uint8_t s_last_gear2_demand = 0;
     static uint32_t s_gear2_start_time = 0;
+    static uint32_t s_gear2_last_send = 0;
 
     if (g_motor_gearshift2.is_enabled && !g_motor_gearshift2.is_fault)
     {
-        if (demand->gear2 != 0 && demand->gear2 != s_last_gear2_demand && s_gear2_state == GEAR2_STATE_IDLE)
+        // 拨动开关触发挂档动作
+        if (demand->gear2 != 0 && demand->gear2 != s_last_gear2_demand)
         {
+            s_last_gear2_demand = demand->gear2;
             int32_t target_pos = (demand->gear2 == 1) ? GEAR2_ABS_FWD_POS : GEAR2_ABS_REV_POS;
             g_motor_gearshift2.target_position = target_pos;
-            g_motor_gearshift2.last_sent_position = 0x7FFFFFFF;
             kinco_set_position(hcan, &g_motor_gearshift2, target_pos, 0);
             s_gear2_state = GEAR2_STATE_MOVING_TO_TARGET;
             s_gear2_start_time = now;
+            s_gear2_last_send = now;
+        }
+        else if (demand->gear2 == 0)
+        {
+            s_last_gear2_demand = 0;
         }
 
         if (s_gear2_state == GEAR2_STATE_MOVING_TO_TARGET)
         {
-            int32_t target_pos = (s_last_gear2_demand == 1 || demand->gear2 == 1) ? GEAR2_ABS_FWD_POS : GEAR2_ABS_REV_POS;
+            int32_t target_pos = (s_last_gear2_demand == 1) ? GEAR2_ABS_FWD_POS : GEAR2_ABS_REV_POS;
             int32_t pos_err = labs(g_motor_gearshift2.actual_position - target_pos);
+
+            // 若发出指令后未动且超过 100ms，自动重发
+            if (pos_err > 5000 && labs(g_motor_gearshift2.actual_velocity) < 5 && (now - s_gear2_last_send >= 300) && (now - s_gear2_start_time < 700))
+            {
+                s_gear2_last_send = now;
+                kinco_set_position(hcan, &g_motor_gearshift2, target_pos, 0);
+            }
+
+            // 到位或超时 800ms，开始返回原点
             if (pos_err < 3000 || (now - s_gear2_start_time >= 800))
             {
                 g_motor_gearshift2.target_position = GEAR2_ABS_ORIGIN_POS;
-                g_motor_gearshift2.last_sent_position = 0x7FFFFFFF;
                 kinco_set_position(hcan, &g_motor_gearshift2, GEAR2_ABS_ORIGIN_POS, 0);
                 s_gear2_state = GEAR2_STATE_RETURNING_TO_ORIGIN;
                 s_gear2_start_time = now;
+                s_gear2_last_send = now;
             }
         }
         else if (s_gear2_state == GEAR2_STATE_RETURNING_TO_ORIGIN)
         {
             int32_t origin_err = labs(g_motor_gearshift2.actual_position - GEAR2_ABS_ORIGIN_POS);
+
+            if (origin_err > 5000 && labs(g_motor_gearshift2.actual_velocity) < 5 && (now - s_gear2_last_send >= 300) && (now - s_gear2_start_time < 700))
+            {
+                s_gear2_last_send = now;
+                kinco_set_position(hcan, &g_motor_gearshift2, GEAR2_ABS_ORIGIN_POS, 0);
+            }
+
             if (origin_err < 3000 || (now - s_gear2_start_time >= 800))
             {
                 s_gear2_state = GEAR2_STATE_IDLE;
             }
         }
-
-        s_last_gear2_demand = demand->gear2;
     }
     else
     {
@@ -174,36 +203,34 @@ void TractorControl_ExecuteDemand(CAN_HandleTypeDef *hcan, const tractor_demand_
         s_last_gear2_demand = 0;
     }
 
-    /* 3. 离合电机 (ID 5) */
-    static uint8_t last_clutch_pos = 0xFF;
+    /* 3. 离合电机 (ID 5: 仅在开关切换或超时未动时发送单次位置指令，绝不重复刷写速度 SDO) */
+    static uint8_t last_clutch_demand = 0xFF;
+    static uint32_t last_clutch_send_time = 0;
+
     if (g_motor_clutch.is_enabled && !g_motor_clutch.is_fault)
     {
         int32_t clutch_target = (demand->clutch != 0) ? CLUTCH_ABS_MAX_POS : CLUTCH_ABS_ORIGIN_POS;
         g_motor_clutch.target_position = clutch_target;
 
-        if (demand->clutch != last_clutch_pos)
+        int32_t pos_err = labs(g_motor_clutch.actual_position - clutch_target);
+        uint8_t demand_changed = (demand->clutch != last_clutch_demand);
+
+        // 开关动作或指令超时 300ms 未响应才重试发送，避免高频 SDO 阻塞驱动器
+        if (demand_changed || (pos_err > 5000 && labs(g_motor_clutch.actual_velocity) < 5 && (now - last_clutch_send_time >= 300)))
         {
-            last_clutch_pos = demand->clutch;
-            g_motor_clutch.last_sent_position = 0x7FFFFFFF;
-            if (demand->clutch != 0)
-            {
-                kinco_set_profile_velocity_custom(hcan, &g_motor_clutch, CLUTCH_PRESS_SPEED_RPM, CLUTCH_PRESS_ACC_RPM_S, CLUTCH_PRESS_ACC_RPM_S);
-                kinco_set_position(hcan, &g_motor_clutch, CLUTCH_ABS_MAX_POS, 0);
-            }
-            else
-            {
-                kinco_set_profile_velocity_custom(hcan, &g_motor_clutch, CLUTCH_RELEASE_SPEED_RPM, CLUTCH_RELEASE_ACC_RPM_S, CLUTCH_RELEASE_ACC_RPM_S);
-                kinco_set_position(hcan, &g_motor_clutch, CLUTCH_ABS_ORIGIN_POS, 0);
-            }
+            last_clutch_demand = demand->clutch;
+            last_clutch_send_time = now;
+            kinco_set_position(hcan, &g_motor_clutch, clutch_target, 0);
         }
     }
     else
     {
-        last_clutch_pos = 0xFF;
+        last_clutch_demand = 0xFF;
     }
 
     /* 4. 油门电机 (ID 6) */
     static int32_t last_thr_target = 0x7FFFFFFF;
+
     if (g_motor_throttle.is_enabled && !g_motor_throttle.is_fault)
     {
         float thr_pct = demand->throttle_pct;
@@ -215,10 +242,11 @@ void TractorControl_ExecuteDemand(CAN_HandleTypeDef *hcan, const tractor_demand_
         else if (thr_pct >= 100.0f) target_pos = THROTTLE_ABS_MAX_POS;
         else                        target_pos = THROTTLE_ABS_ORIGIN_POS + (int32_t)(thr_pct / 100.0f * (float)THROTTLE_ABS_TOTAL_SPAN);
 
+        g_motor_throttle.target_position = target_pos;
+
         if (last_thr_target == 0x7FFFFFFF || labs(target_pos - last_thr_target) > 80 || (thr_pct == 0.0f && last_thr_target != target_pos) || (thr_pct >= 100.0f && last_thr_target != target_pos))
         {
             last_thr_target = target_pos;
-            g_motor_throttle.last_sent_position = 0x7FFFFFFF;
             kinco_set_position(hcan, &g_motor_throttle, target_pos, 0);
         }
     }
@@ -227,23 +255,29 @@ void TractorControl_ExecuteDemand(CAN_HandleTypeDef *hcan, const tractor_demand_
         last_thr_target = 0x7FFFFFFF;
     }
 
-    /* 5. 刹车电机 (ID 3) */
-    static uint8_t last_brake_sw = 0xFF;
+    /* 5. 刹车电机 (ID 3: 具备自动重发与防漏发机制) */
+    static uint8_t last_brake_demand = 0xFF;
+    static uint32_t last_brake_send_time = 0;
+
     if (g_motor_brake.is_enabled && !g_motor_brake.is_fault)
     {
         uint8_t brake_sw = (demand->brake != 0) ? 1 : 0;
         int32_t brake_target = (brake_sw) ? BRAKE_ABS_MAX_POS : BRAKE_ABS_ORIGIN_POS;
+        g_motor_brake.target_position = brake_target;
 
-        if (brake_sw != last_brake_sw)
+        int32_t pos_err = labs(g_motor_brake.actual_position - brake_target);
+        uint8_t demand_changed = (brake_sw != last_brake_demand);
+
+        if (demand_changed || (pos_err > 5000 && labs(g_motor_brake.actual_velocity) < 5 && (now - last_brake_send_time >= 300)))
         {
-            last_brake_sw = brake_sw;
-            g_motor_brake.last_sent_position = 0x7FFFFFFF;
+            last_brake_demand = brake_sw;
+            last_brake_send_time = now;
             kinco_set_position(hcan, &g_motor_brake, brake_target, 0);
         }
     }
     else
     {
-        last_brake_sw = 0xFF;
+        last_brake_demand = 0xFF;
     }
 
     /* 6. 电动推杆 (继电器换向) */
@@ -341,7 +375,6 @@ void TractorControl_Failsafe(CAN_HandleTypeDef *hcan)
     }
     if (g_motor_clutch.is_enabled && g_motor_clutch.last_sent_position != CLUTCH_ABS_MAX_POS)
     {
-        kinco_set_profile_velocity_custom(hcan, &g_motor_clutch, 1500, 3000, 3000);
         kinco_set_position(hcan, &g_motor_clutch, CLUTCH_ABS_MAX_POS, 0);
     }
 
