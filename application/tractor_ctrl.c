@@ -501,10 +501,13 @@ void TractorControl_Update(CAN_HandleTypeDef *hcan)
         }
     }
 
+    static uint8_t s_auto_armed = 0; // 上位机开机中位就绪锁 (0:未对频/异常保护, 1:已解锁正常控制)
+
     if (sbus_override || !serial_alive)
     {
         /* 1. 遥控手动模式 (或上位机未在线) */
         g_tractor_control_mode = 0;
+        s_auto_armed = 0; // 上位机掉线或被遥控抢跑时复位安全锁
 
         if (sbus_demand.is_active)
         {
@@ -520,30 +523,62 @@ void TractorControl_Update(CAN_HandleTypeDef *hcan)
         /* 2. 上位机自动驾驶模式 (遥控中位且上位机心跳活跃) */
         g_tractor_control_mode = 1;
 
+        /* 开机安全中位握手校验:
+         * 刚上电未对频时上位机接收机会下发异常默认值 (如 clutch=1, steer=-60.0)。
+         * 必须等待上位机接收机对频成功且通道恢复安全中位至少一次后，才正式解锁控制！ */
+        if (!s_auto_armed)
+        {
+            if (fabsf(g_serial_auto_cmd.steer_speed_rpm) < 2.0f &&
+                g_serial_auto_cmd.clutch == 0 &&
+                g_serial_auto_cmd.throttle_percent == 0 &&
+                g_serial_auto_cmd.gear == 0 &&
+                g_serial_auto_cmd.gear2 == 0)
+            {
+                s_auto_armed = 1; // 确认对频成功恢复中位，解锁正常控制！
+            }
+        }
+
         tractor_demand_t auto_demand;
         memset(&auto_demand, 0, sizeof(auto_demand));
         auto_demand.is_active = 1;
-        auto_demand.gear = g_serial_auto_cmd.gear;
-        auto_demand.gear2 = g_serial_auto_cmd.gear2; // 2号电机换向动作 (1:前进, 2:倒退, 0:空闲)
-        auto_demand.clutch = g_serial_auto_cmd.clutch;
-        auto_demand.throttle_pct = (float)g_serial_auto_cmd.throttle_percent;
-        auto_demand.brake = g_serial_auto_cmd.brake;
-        auto_demand.actuator_dir = 0;
 
-        /* 方向盘控制: 上位机摇杆中位时使能倾角闭环回正，推摇杆时享受与下位机完全一致的丝滑S曲线位置控制 */
-        if (fabsf(g_serial_auto_cmd.steer_speed_rpm) < 1.0f)
+        if (s_auto_armed)
         {
-            auto_demand.steer_is_neutral = 1; // 摇杆回中: 启用前轮倾角自动回正
-            auto_demand.steer_target_deg = 0.0f;
+            /* 正常解锁状态: 执行上位机下发的控制量 */
+            auto_demand.gear = g_serial_auto_cmd.gear;
+            auto_demand.gear2 = g_serial_auto_cmd.gear2; // 2号电机换向动作 (1:前进, 2:倒退, 0:空闲)
+            auto_demand.clutch = g_serial_auto_cmd.clutch;
+            auto_demand.throttle_pct = (float)g_serial_auto_cmd.throttle_percent;
+            auto_demand.brake = g_serial_auto_cmd.brake;
+            auto_demand.actuator_dir = 0;
+
+            /* 方向盘控制: 上位机摇杆中位时使能倾角闭环回正，推摇杆时享受与下位机完全一致的丝滑S曲线位置控制 */
+            if (fabsf(g_serial_auto_cmd.steer_speed_rpm) < 1.0f)
+            {
+                auto_demand.steer_is_neutral = 1; // 摇杆回中: 启用前轮倾角自动回正
+                auto_demand.steer_target_deg = 0.0f;
+            }
+            else
+            {
+                auto_demand.steer_is_neutral = 0; // 摇杆打方向: 上位机遥控直接丝滑打满方向
+                float x = ((float)SERIAL_AUTO_STEER_POLARITY * g_serial_auto_cmd.steer_speed_rpm) / SERIAL_AUTO_STEER_MAX_INPUT;
+                if (x > 1.0f)  x = 1.0f;
+                if (x < -1.0f) x = -1.0f;
+                float y = 0.30f * x + 0.70f * (x * x * x); // 非线性 S 曲线 (小推力精细，大推力快速)
+                auto_demand.steer_target_deg = y * STEERING_MAX_ANGLE_DEG;
+            }
         }
         else
         {
-            auto_demand.steer_is_neutral = 0; // 摇杆打方向: 上位机遥控直接丝滑打满方向
-            float x = ((float)SERIAL_AUTO_STEER_POLARITY * g_serial_auto_cmd.steer_speed_rpm) / SERIAL_AUTO_STEER_MAX_INPUT;
-            if (x > 1.0f)  x = 1.0f;
-            if (x < -1.0f) x = -1.0f;
-            float y = 0.30f * x + 0.70f * (x * x * x); // 非线性 S 曲线 (小推力精细，大推力快速)
-            auto_demand.steer_target_deg = y * STEERING_MAX_ANGLE_DEG;
+            /* 未对频/异常状态: 舍弃全部控制量，保持全设备绝对安全空闲与前轮自动对中 */
+            auto_demand.gear = 0;
+            auto_demand.gear2 = 0;
+            auto_demand.clutch = 0;
+            auto_demand.throttle_pct = 0.0f;
+            auto_demand.brake = 0;
+            auto_demand.actuator_dir = 0;
+            auto_demand.steer_is_neutral = 1; // 保持前轮倾角安全回正
+            auto_demand.steer_target_deg = 0.0f;
         }
 
         TractorControl_ExecuteDemand(hcan, &auto_demand);
