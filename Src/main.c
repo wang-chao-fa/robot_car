@@ -167,8 +167,8 @@ int main(void)
                     "ID2(G2):en=%d st=0x%04X tgt=%ld act=%ld | ID3(Brk):en=%d st=0x%04X tgt=%ld act=%ld\r\n"
                     "ID4(G1):en=%d st=0x%04X tgt=%ld act=%ld | ID5(Clt):en=%d st=0x%04X tgt=%ld act=%ld\r\n"
                     "ID6(Thr):en=%d st=0x%04X tgt=%ld act=%ld | ID7(Str):en=%d tgt=%ld.%01ld act=%ld.%01ld\r\n"
-                    "[INC-1 前轮0x18B] On:%d Roll:%ld.%02ld Pitch:%ld.%02ld | [INC-2 车身0x18C] On:%d Roll:%ld.%02ld Pitch:%ld.%02ld\r\n"
-                    "[STEER-DIFF 转向差分] 真实转角(Diff):%ld.%02ld deg | 残差(Comp):%ld.%01ld deg\r\n\r\n",
+                    "[INC-1 Whl:0x18B] On:%d Roll:%ld.%02ld Pitch:%ld.%02ld | [INC-2 Bod:0x18C] On:%d Roll:%ld.%02ld Pitch:%ld.%02ld\r\n"
+                    "[STEER-DIFF] Diff:%ld.%02ld deg | Comp:%ld.%01ld deg\r\n\r\n",
                     ch1_gear, ch7_gear2, ch2_clut, ch3_thro, ch4_brak, ch6_actu, ch8_ster, failsafe_flag,
                     g_motor_gearshift2.is_enabled, g_motor_gearshift2.statusword, (long)g_motor_gearshift2.target_position, (long)g_motor_gearshift2.actual_position,
                     g_motor_brake.is_enabled, g_motor_brake.statusword, (long)g_motor_brake.target_position, (long)g_motor_brake.actual_position,
