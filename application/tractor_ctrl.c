@@ -530,19 +530,20 @@ void TractorControl_Update(CAN_HandleTypeDef *hcan)
         auto_demand.brake = g_serial_auto_cmd.brake;
         auto_demand.actuator_dir = 0;
 
-        /* 方向盘控制: 转速为0时使能倾角闭环回正，转速非0时按角速度转动 */
-        if (fabsf(g_serial_auto_cmd.steer_speed_rpm) < 0.5f)
+        /* 方向盘控制: 上位机摇杆中位时使能倾角闭环回正，推摇杆时享受与下位机完全一致的丝滑S曲线位置控制 */
+        if (fabsf(g_serial_auto_cmd.steer_speed_rpm) < 1.0f)
         {
-            auto_demand.steer_is_neutral = 1; // 启用前轮倾角自动回正
+            auto_demand.steer_is_neutral = 1; // 摇杆回中: 启用前轮倾角自动回正
             auto_demand.steer_target_deg = 0.0f;
         }
         else
         {
-            auto_demand.steer_is_neutral = 0;
-            // 速度换算: rpm * 360 / 60 = rpm * 6.0 °/s, 20ms 周期累加
-            float steer_dps = g_serial_auto_cmd.steer_speed_rpm * 6.0f;
-            s_steer_auto_target_deg += steer_dps * 0.02f;
-            auto_demand.steer_target_deg = s_steer_auto_target_deg;
+            auto_demand.steer_is_neutral = 0; // 摇杆打方向: 上位机遥控直接丝滑打满方向
+            float x = ((float)SERIAL_AUTO_STEER_POLARITY * g_serial_auto_cmd.steer_speed_rpm) / SERIAL_AUTO_STEER_MAX_INPUT;
+            if (x > 1.0f)  x = 1.0f;
+            if (x < -1.0f) x = -1.0f;
+            float y = 0.30f * x + 0.70f * (x * x * x); // 非线性 S 曲线 (小推力精细，大推力快速)
+            auto_demand.steer_target_deg = y * STEERING_MAX_ANGLE_DEG;
         }
 
         TractorControl_ExecuteDemand(hcan, &auto_demand);
