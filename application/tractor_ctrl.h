@@ -71,13 +71,14 @@ extern kinco_motor_t g_motor_throttle;   // ID 6 (油门电机)
 #define SERIAL_AUTO_STEER_MAX_INPUT      (60.0f)   // 上位机遥控打满时的极值 (根据实测上位机下发 ±60.0)
 #define SERIAL_AUTO_STEER_POLARITY       (-1)      // 上位机遥控方向盘极性: 1 为正常, -1 为反向 (如果方向反了直接改成 1)
 
-/* ---------------- 7. 前轮转向轴角度传感器分段减速平滑回正参数 ---------------- */
-#define FRONT_WHEEL_ZERO_ROLL_DEG        (-8.91f)  // 实测前轮绝对正中基准角度 (度)
+/* ---------------- 7. 前轮转向双倾角传感器 (0x18B前轮 + 0x18C车身) 差分平滑回正参数 ---------------- */
+#define FRONT_WHEEL_ZERO_DIFF_DEG        (0.0f)    // 实测前轮相对车身正中差分基准角度 (度: Roll_wheel - Roll_body)
 #define STEER_CLOSED_LOOP_DEADBAND_DEG   (0.20f)   // 前轮回正对中死区 (度，在 ±0.20° 内停转锁定)
 #define STEER_SLOWDOWN_THRESHOLD_DEG     (1.50f)   // 开始减速距离阈值 (度，偏差 < 1.50° 时自动降速防震荡)
 #define STEER_TRACK_FAST_SPEED_DPS       (90.0f)   // 远距离恒速快速纠偏速度 (度/秒)
 #define STEER_TRACK_SLOW_SPEED_DPS       (15.0f)   // 临近零点最低逼近速度 (度/秒)
 #define STEER_CORRECT_DIR_POLARITY       (-1)      // 【纠偏方向极性】: 1 为正常方向, -1 为反转方向 (已校准为 -1)
+#define STEER_MAX_AUTO_CORRECT_DEG       (250.0f)  // 【防打死安全锁】自动纠偏最大允许微调角度 (度，绝不允许自我转死)
 
 /* 三档与两档开关解析 */
 typedef enum {

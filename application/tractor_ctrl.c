@@ -45,9 +45,11 @@ static float Steer_ConstantSpeed_Track(float dt)
         s_steer_auto_inited = 1;
     }
 
-    // 1. 计算前轮当前与正中基准 (-8.91°) 的误差
-    // 目标基准 - 实测角度: FRONT_WHEEL_ZERO_ROLL_DEG - g_inclinometer.roll_deg
-    float error = FRONT_WHEEL_ZERO_ROLL_DEG - g_inclinometer.roll_deg;
+    // 1. 获取前轮相对车身的差分纯净转向角度 (度: Roll_wheel - Roll_body，已完全抵消坡度)
+    float current_steer_deg = Inclinometer_GetSteerAngle_Deg();
+
+    // 计算当前转向角与直行中位基准 (FRONT_WHEEL_ZERO_DIFF_DEG) 的误差
+    float error = FRONT_WHEEL_ZERO_DIFF_DEG - current_steer_deg;
     g_steer_closed_loop_adj_deg = error; // 记录残余误差供串口监视显示
 
     float abs_err = fabsf(error);
@@ -72,7 +74,7 @@ static float Steer_ConstantSpeed_Track(float dt)
         current_speed_dps = STEER_TRACK_SLOW_SPEED_DPS + ratio * (STEER_TRACK_FAST_SPEED_DPS - STEER_TRACK_SLOW_SPEED_DPS);
     }
 
-    // 4. 方向盘目标角度积分累加 (无圈数限制，可无限多圈自由转动直到前轮到达零点):
+    // 4. 方向盘目标角度积分累加:
     // STEER_CORRECT_DIR_POLARITY: 1 为正向，-1 为反向
     float step = (float)STEER_CORRECT_DIR_POLARITY * current_speed_dps * dt;
     if (error > 0.0f)
@@ -82,6 +84,17 @@ static float Steer_ConstantSpeed_Track(float dt)
     else
     {
         s_steer_auto_target_deg -= step;
+    }
+
+    // 5. 【防打死安全锁】: 自动回正相对于中位基准最多允许修正 ±STEER_MAX_AUTO_CORRECT_DEG (±250°)，防止无限转死
+    float span_from_center = s_steer_auto_target_deg - s_steer_straight_center_deg;
+    if (span_from_center > STEER_MAX_AUTO_CORRECT_DEG)
+    {
+        s_steer_auto_target_deg = s_steer_straight_center_deg + STEER_MAX_AUTO_CORRECT_DEG;
+    }
+    else if (span_from_center < -STEER_MAX_AUTO_CORRECT_DEG)
+    {
+        s_steer_auto_target_deg = s_steer_straight_center_deg - STEER_MAX_AUTO_CORRECT_DEG;
     }
 
     return s_steer_auto_target_deg;

@@ -36,8 +36,9 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
             continue;
         }
 
-        // 2. VALUER 倾角角度传感器 (标准帧 0x18B / INCLINOMETER_PDO1_CAN_ID)
-        if (can_id == INCLINOMETER_PDO1_CAN_ID || can_id == 0x18B)
+        // 2. VALUER 倾角角度传感器 (前轮 0x18B, 车身底盘 0x18C)
+        if (can_id == INCLINOMETER_WHEEL_CAN_ID || can_id == INCLINOMETER_BODY_CAN_ID ||
+            can_id == 0x18B || can_id == 0x18C)
         {
             Inclinometer_ProcessCAN(can_id, rx_data, dlc);
             continue;
