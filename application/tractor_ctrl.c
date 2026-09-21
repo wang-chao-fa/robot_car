@@ -21,7 +21,8 @@ kinco_motor_t g_motor_throttle;   // ID 6
 float g_steer_closed_loop_adj_deg = 0.0f; // 全局当前前轮残余误差 (度，供串口监视)
 uint8_t g_tractor_control_mode = 0;       // 全局当前控制模式 (0: 遥控手动, 1: 上位机自动)
 
-static float s_steer_auto_target_deg = 0.0f; // 方向盘纠偏目标累计角度
+static float s_steer_auto_target_deg = 0.0f;     // 方向盘纠偏目标累计角度
+static float s_steer_straight_center_deg = 0.0f; // 拖拉机前轮直行中位基准角度
 static uint8_t s_steer_auto_inited = 0;
 
 /**
@@ -40,10 +41,11 @@ static float Steer_ConstantSpeed_Track(float dt)
     if (!s_steer_auto_inited)
     {
         s_steer_auto_target_deg = g_mdu_steering_motor.actual_angle_deg;
+        s_steer_straight_center_deg = g_mdu_steering_motor.actual_angle_deg;
         s_steer_auto_inited = 1;
     }
 
-    // 1. 计算前轮当前与正中基准 (-7.91°) 的误差
+    // 1. 计算前轮当前与正中基准 (-8.91°) 的误差
     // 目标基准 - 实测角度: FRONT_WHEEL_ZERO_ROLL_DEG - g_inclinometer.roll_deg
     float error = FRONT_WHEEL_ZERO_ROLL_DEG - g_inclinometer.roll_deg;
     g_steer_closed_loop_adj_deg = error; // 记录残余误差供串口监视显示
@@ -53,7 +55,8 @@ static float Steer_ConstantSpeed_Track(float dt)
     // 2. 前轮死区判断: 在 ±0.20° 以内认为已到达正中零点，完全停转
     if (abs_err <= STEER_CLOSED_LOOP_DEADBAND_DEG)
     {
-        // 到达零点死区，保持当前目标角度不变（电机停转）
+        // 到达零点死区，锁定并更新直行中位基准
+        s_steer_straight_center_deg = s_steer_auto_target_deg;
         return s_steer_auto_target_deg;
     }
 
@@ -161,7 +164,7 @@ void TractorControl_GetSBUSDemand(tractor_demand_t *demand)
         if (x > 1.0f)  x = 1.0f;
         if (x < -1.0f) x = -1.0f;
         float y = 0.30f * x + 0.70f * (x * x * x);
-        demand->steer_target_deg = y * STEERING_MAX_ANGLE_DEG;
+        demand->steer_target_deg = s_steer_straight_center_deg + (y * STEERING_MAX_ANGLE_DEG);
     }
 }
 
@@ -565,7 +568,7 @@ void TractorControl_Update(CAN_HandleTypeDef *hcan)
                 if (x > 1.0f)  x = 1.0f;
                 if (x < -1.0f) x = -1.0f;
                 float y = 0.30f * x + 0.70f * (x * x * x); // 非线性 S 曲线 (小推力精细，大推力快速)
-                auto_demand.steer_target_deg = y * STEERING_MAX_ANGLE_DEG;
+                auto_demand.steer_target_deg = s_steer_straight_center_deg + (y * STEERING_MAX_ANGLE_DEG);
             }
         }
         else
