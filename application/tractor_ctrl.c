@@ -7,6 +7,7 @@
 #include "tractor_ctrl.h"
 #include "analog_input.h"
 #include "inclinometer.h"
+#include "auto_serial_ctrl.h"
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
@@ -18,6 +19,7 @@ kinco_motor_t g_motor_clutch;     // ID 5
 kinco_motor_t g_motor_throttle;   // ID 6
 
 float g_steer_closed_loop_adj_deg = 0.0f; // 全局当前前轮残余误差 (度，供串口监视)
+uint8_t g_tractor_control_mode = 0;       // 全局当前控制模式 (0: 遥控手动, 1: 上位机自动)
 
 static float s_steer_auto_target_deg = 0.0f; // 方向盘纠偏目标累计角度
 static uint8_t s_steer_auto_inited = 0;
@@ -482,12 +484,67 @@ void TractorControl_Update(CAN_HandleTypeDef *hcan)
     tractor_demand_t sbus_demand;
     TractorControl_GetSBUSDemand(&sbus_demand);
 
+    uint8_t serial_alive = Serial_Auto_IsAlive();
+
+    /* 检查遥控器是否有主动操作 (遥控具备绝对最高安全抢跑权限) */
+    uint8_t sbus_override = 0;
     if (sbus_demand.is_active)
     {
-        TractorControl_ExecuteDemand(hcan, &sbus_demand);
+        if (sbus_demand.gear != 0 || 
+            sbus_demand.gear2 != 0 || 
+            sbus_demand.clutch != 0 || 
+            sbus_demand.brake != 0 || 
+            sbus_demand.throttle_pct > 5.0f || 
+            !sbus_demand.steer_is_neutral)
+        {
+            sbus_override = 1; // 遥控器有动作，人工安全员抢权
+        }
+    }
+
+    if (sbus_override || !serial_alive)
+    {
+        /* 1. 遥控手动模式 (或上位机未在线) */
+        g_tractor_control_mode = 0;
+
+        if (sbus_demand.is_active)
+        {
+            TractorControl_ExecuteDemand(hcan, &sbus_demand);
+        }
+        else
+        {
+            TractorControl_Failsafe(hcan);
+        }
     }
     else
     {
-        TractorControl_Failsafe(hcan);
+        /* 2. 上位机自动驾驶模式 (遥控中位且上位机心跳活跃) */
+        g_tractor_control_mode = 1;
+
+        tractor_demand_t auto_demand;
+        memset(&auto_demand, 0, sizeof(auto_demand));
+        auto_demand.is_active = 1;
+        auto_demand.gear = g_serial_auto_cmd.gear;
+        auto_demand.gear2 = g_serial_auto_cmd.gear2; // 2号电机换向动作 (1:前进, 2:倒退, 0:空闲)
+        auto_demand.clutch = g_serial_auto_cmd.clutch;
+        auto_demand.throttle_pct = (float)g_serial_auto_cmd.throttle_percent;
+        auto_demand.brake = g_serial_auto_cmd.brake;
+        auto_demand.actuator_dir = 0;
+
+        /* 方向盘控制: 转速为0时使能倾角闭环回正，转速非0时按角速度转动 */
+        if (fabsf(g_serial_auto_cmd.steer_speed_rpm) < 0.5f)
+        {
+            auto_demand.steer_is_neutral = 1; // 启用前轮倾角自动回正
+            auto_demand.steer_target_deg = 0.0f;
+        }
+        else
+        {
+            auto_demand.steer_is_neutral = 0;
+            // 速度换算: rpm * 360 / 60 = rpm * 6.0 °/s, 20ms 周期累加
+            float steer_dps = g_serial_auto_cmd.steer_speed_rpm * 6.0f;
+            s_steer_auto_target_deg += steer_dps * 0.02f;
+            auto_demand.steer_target_deg = s_steer_auto_target_deg;
+        }
+
+        TractorControl_ExecuteDemand(hcan, &auto_demand);
     }
 }

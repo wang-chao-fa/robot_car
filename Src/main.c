@@ -19,6 +19,7 @@
 #include "relay_output.h"
 #include "analog_input.h"
 #include "inclinometer.h"
+#include "auto_serial_ctrl.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -47,7 +48,9 @@ int main(void)
     Analog_Input_Init(&hcan1);
     Inclinometer_Init();
 
-    /* 3. MDU 方向盘电机初始化 */
+    /* 3. 上位机自动驾驶协议与 MDU 方向盘电机初始化 */
+    Serial_Auto_Init();
+    __HAL_UART_ENABLE_IT(&huart6, UART_IT_RXNE);
     MDU_Motor_Init(&hcan1);
 
     /* 等待 1500ms 确保步科驱动器上电就绪 */
@@ -81,6 +84,7 @@ int main(void)
 
     static uint32_t print_tick = 0;
     static uint32_t ctrl_loop_tick = 0;
+    static uint32_t auto_feedback_tick = 0;
     static char tx_buf[512];
 
     /* 主循环 (无任何阻塞延时) */
@@ -101,24 +105,32 @@ int main(void)
         /* 方向盘舵机状态机推进与自动使能自愈 (非阻塞) */
         MDU_Motor_Control_Loop(&hcan1);
 
-        /* 20ms 周期拖拉机核心逻辑控制环 */
+        /* 20ms 周期拖拉机核心逻辑控制环 (自动处理遥控与上位机仲裁) */
         if (now - ctrl_loop_tick >= 20)
         {
             ctrl_loop_tick = now;
-            uint8_t sbus_ok = (sbus_updated && ((now - sbus_last_time) <= SBUS_FAILSAFE_TIMEOUT_MS)) ? 1 : 0;
+            TractorControl_Update(&hcan1);
 
-            if (sbus_ok)
+            uint8_t sbus_ok = (sbus_updated && ((now - sbus_last_time) <= SBUS_FAILSAFE_TIMEOUT_MS)) ? 1 : 0;
+            uint8_t serial_ok = Serial_Auto_IsAlive();
+
+            if (sbus_ok || serial_ok)
             {
-                TractorControl_Update(&hcan1);
-                HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);   // 遥控在线红灯熄灭
-                HAL_GPIO_WritePin(LED_G_GPIO_Port, LED_G_Pin, GPIO_PIN_RESET); // 绿灯亮
+                HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);   // 正常在线红灯熄灭
+                HAL_GPIO_WritePin(LED_G_GPIO_Port, LED_G_Pin, GPIO_PIN_RESET); // 绿灯常亮
             }
             else
             {
-                TractorControl_Failsafe(&hcan1);
-                HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET); // 遥控离线红灯常亮报警
+                HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET); // 全离线红灯常亮报警
                 HAL_GPIO_WritePin(LED_G_GPIO_Port, LED_G_Pin, GPIO_PIN_SET);
             }
+        }
+
+        /* 50ms 周期 (20Hz) 向上位机发送 $STATE 状态回传帧 */
+        if (now - auto_feedback_tick >= 50)
+        {
+            auto_feedback_tick = now;
+            Serial_Auto_SendFeedback(&huart6, g_tractor_control_mode);
         }
 
         /* 200ms 周期串口非阻塞中断打印 (绝对不卡主循环) */

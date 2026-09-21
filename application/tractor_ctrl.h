@@ -102,6 +102,7 @@ typedef struct {
 } tractor_demand_t;
 
 extern float g_steer_closed_loop_adj_deg; // 全局当前闭环纠偏补偿值
+extern uint8_t g_tractor_control_mode;    // 全局当前控制模式 (0: 遥控手动, 1: 上位机自动)
 
 void TractorControl_GetSBUSDemand(tractor_demand_t *demand);
 void TractorControl_ExecuteDemand(CAN_HandleTypeDef *hcan, const tractor_demand_t *demand);

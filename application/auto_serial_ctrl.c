@@ -7,6 +7,7 @@
 
 #include "auto_serial_ctrl.h"
 #include "analog_input.h"
+#include "inclinometer.h"
 #include "mdu_steering_motor.h"
 #include "rc_sbus.h"
 #include <stdio.h>
@@ -85,12 +86,12 @@ static void Serial_Auto_ProcessFrame(char *frame, uint16_t len)
     memcpy(data_buf, frame, data_len);
     data_buf[data_len] = '\0';
 
-    int gear_tmp = 0, clutch_tmp = 0, throttle_tmp = 0, brake_tmp = 0, actuator_tmp = 0, hb_tmp = 0;
+    int gear1_tmp = 0, clutch_tmp = 0, throttle_tmp = 0, brake_tmp = 0, gear2_raw = 0, hb_tmp = 0;
     float steer_tmp = 0.0f;
 
     int parsed = sscanf(data_buf, "AUTO,%d,%d,%d,%d,%d,%f,%d",
-                        &gear_tmp, &clutch_tmp, &throttle_tmp, &brake_tmp,
-                        &actuator_tmp, &steer_tmp, &hb_tmp);
+                        &gear1_tmp, &clutch_tmp, &throttle_tmp, &brake_tmp,
+                        &gear2_raw, &steer_tmp, &hb_tmp);
 
     if (parsed != 7)
     {
@@ -99,14 +100,28 @@ static void Serial_Auto_ProcessFrame(char *frame, uint16_t len)
     }
 
     /* 限制控制量在合法安全范围内 */
-    if (gear_tmp < 0 || gear_tmp > 2) gear_tmp = 0;
+    if (gear1_tmp < 0 || gear1_tmp > 2) gear1_tmp = 0;
     if (clutch_tmp != 0 && clutch_tmp != 1) clutch_tmp = 0;
     if (throttle_tmp < 0) throttle_tmp = 0;
     if (throttle_tmp > 100) throttle_tmp = 100;
     if (brake_tmp != 0 && brake_tmp != 1) brake_tmp = 0;
-    if (actuator_tmp < -1) actuator_tmp = -1;
-    if (actuator_tmp > 1) actuator_tmp = 1;
-    if (steer_tmp > 100.0f) steer_tmp = 100.0f;
+
+    /* 2号档位换向解析 (方案1: 完美兼容原推杆 -1,0,1 及 0,1,2 编码) */
+    int8_t gear2_parsed = 0;
+    if (gear2_raw == 1)
+    {
+        gear2_parsed = 1; // 2号电机前进换向
+    }
+    else if (gear2_raw == -1 || gear2_raw == 2)
+    {
+        gear2_parsed = 2; // 2号电机倒退换向 (兼容 -1 和 2)
+    }
+    else
+    {
+        gear2_parsed = 0; // 停止/中位
+    }
+
+    if (steer_tmp > 100.0f)  steer_tmp = 100.0f;
     if (steer_tmp < -100.0f) steer_tmp = -100.0f;
     hb_tmp &= 0xFF;
 
@@ -133,11 +148,11 @@ static void Serial_Auto_ProcessFrame(char *frame, uint16_t len)
     }
 
     /* 更新全局自动驾驶控制量 */
-    g_serial_auto_cmd.gear             = (uint8_t)gear_tmp;
+    g_serial_auto_cmd.gear             = (uint8_t)gear1_tmp;
     g_serial_auto_cmd.clutch           = (uint8_t)clutch_tmp;
     g_serial_auto_cmd.throttle_percent = (uint8_t)throttle_tmp;
     g_serial_auto_cmd.brake            = (uint8_t)brake_tmp;
-    g_serial_auto_cmd.actuator_dir     = (int8_t)actuator_tmp;
+    g_serial_auto_cmd.gear2            = gear2_parsed;
     g_serial_auto_cmd.steer_speed_rpm  = steer_tmp;
     g_serial_auto_cmd.last_heartbeat   = g_serial_auto_cmd.heartbeat;
     g_serial_auto_cmd.heartbeat        = new_hb;
@@ -272,14 +287,15 @@ void Serial_Auto_SendFeedback(UART_HandleTypeDef *huart, uint8_t mode)
     char payload[128];
     char tx_frame[140];
 
-    float wheel_angle = Analog_Input_GetChannel1_Angle0To90();
+    // 优先使用高精度 CANopen 倾角传感器角度，若离线则使用模拟量通道1
+    float wheel_angle = Inclinometer_IsOnline() ? g_inclinometer.roll_deg : Analog_Input_GetChannel1_Angle0To90();
     float steer_angle = g_mdu_steering_motor.actual_angle_deg;
     float steer_rpm   = g_mdu_steering_motor.actual_speed_rpm;
     uint8_t err_mask  = Serial_Auto_GetErrMask();
     uint8_t hb_echo   = g_serial_auto_cmd.heartbeat;
 
     int payload_len = snprintf(payload, sizeof(payload),
-        "STATE,%.1f,%.1f,%.1f,%d,%d,%d",
+        "STATE,%.2f,%.1f,%.1f,%d,%d,%d",
         wheel_angle, steer_angle, steer_rpm,
         (int)mode, (int)err_mask, (int)hb_echo);
 
