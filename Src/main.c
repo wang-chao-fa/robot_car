@@ -85,7 +85,8 @@ int main(void)
     static uint32_t print_tick = 0;
     static uint32_t ctrl_loop_tick = 0;
     static uint32_t auto_feedback_tick = 0;
-    static char tx_buf[512];
+    static char tx_buf[2][512];
+    static uint8_t tx_buf_idx = 0;
 
     /* 主循环 (无任何阻塞延时) */
     while (1)
@@ -162,7 +163,10 @@ int main(void)
                 uint8_t whl_ok      = Inclinometer_IsOnline();
                 uint8_t bod_ok      = Inclinometer_Body_IsOnline();
 
-                int len = snprintf(tx_buf, sizeof(tx_buf),
+                char *cur_buf = tx_buf[tx_buf_idx];
+                tx_buf_idx = (tx_buf_idx + 1) % 2;
+
+                int len = snprintf(cur_buf, 512,
                     "[RC] G1:%4d G2:%4d Cl:%4d Th:%4d Br:%4d Ac:%4d St:%4d | FS:%d\r\n"
                     "ID2(G2):en=%d st=0x%04X tgt=%ld act=%ld | ID3(Brk):en=%d st=0x%04X tgt=%ld act=%ld\r\n"
                     "ID4(G1):en=%d st=0x%04X tgt=%ld act=%ld | ID5(Clt):en=%d st=0x%04X tgt=%ld act=%ld\r\n"
@@ -184,8 +188,8 @@ int main(void)
 
                 if (len > 0)
                 {
-                    if (len >= (int)sizeof(tx_buf)) len = (int)sizeof(tx_buf) - 1;
-                    HAL_UART_Transmit_IT(&huart1, (uint8_t *)tx_buf, (uint16_t)len);
+                    if (len >= 512) len = 511;
+                    HAL_UART_Transmit_IT(&huart1, (uint8_t *)cur_buf, (uint16_t)len);
                 }
             }
         }
