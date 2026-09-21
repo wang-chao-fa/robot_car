@@ -67,7 +67,15 @@ extern kinco_motor_t g_motor_throttle;   // ID 6 (油门电机)
 #define THROTTLE_ABS_TOTAL_SPAN   (THROTTLE_ABS_MAX_POS - THROTTLE_ABS_ORIGIN_POS) // 油门总行程脉冲
 
 /* ---------------- 6. 方向盘电机参数 (ID 7) ---------------- */
-#define STEERING_MAX_ANGLE_DEG    720.0f // 方向盘最大转动角度 (±720度)
+#define STEERING_MAX_ANGLE_DEG    720.0f // 遥控打方向最大转动角度 (±720度)
+
+/* ---------------- 7. 前轮转向轴角度传感器分段减速平滑回正参数 ---------------- */
+#define FRONT_WHEEL_ZERO_ROLL_DEG        (-7.91f)  // 实测前轮绝对正中基准角度 (度)
+#define STEER_CLOSED_LOOP_DEADBAND_DEG   (0.20f)   // 前轮回正对中死区 (度，在 ±0.20° 内停转锁定)
+#define STEER_SLOWDOWN_THRESHOLD_DEG     (1.50f)   // 开始减速距离阈值 (度，偏差 < 1.50° 时自动降速防震荡)
+#define STEER_TRACK_FAST_SPEED_DPS       (90.0f)   // 远距离恒速快速纠偏速度 (度/秒)
+#define STEER_TRACK_SLOW_SPEED_DPS       (15.0f)   // 临近零点最低逼近速度 (度/秒)
+#define STEER_CORRECT_DIR_POLARITY       (-1)      // 【纠偏方向极性】: 1 为正常方向, -1 为反转方向 (已校准为 -1)
 
 /* 三档与两档开关解析 */
 typedef enum {
@@ -90,7 +98,10 @@ typedef struct {
     uint8_t  brake;              // 刹车 (0:松开, 1:踩下)
     int8_t   actuator_dir;       // 推杆方向 (1:伸出, 0:停止, -1:缩回)
     float    steer_target_deg;   // 方向盘目标角度 (度)
+    uint8_t  steer_is_neutral;   // 方向盘摇杆是否处于中位 (1:中位启用闭环, 0:打方向手动优先)
 } tractor_demand_t;
+
+extern float g_steer_closed_loop_adj_deg; // 全局当前闭环纠偏补偿值
 
 void TractorControl_GetSBUSDemand(tractor_demand_t *demand);
 void TractorControl_ExecuteDemand(CAN_HandleTypeDef *hcan, const tractor_demand_t *demand);

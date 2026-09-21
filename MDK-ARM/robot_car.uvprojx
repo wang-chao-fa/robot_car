@@ -579,6 +579,11 @@
               <FileType>1</FileType>
               <FilePath>..\application\auto_serial_ctrl.c</FilePath>
             </File>
+            <File>
+              <FileName>inclinometer.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\application\inclinometer.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

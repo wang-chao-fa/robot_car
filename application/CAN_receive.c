@@ -10,6 +10,7 @@
 #include "relay_output.h"
 #include "analog_input.h"
 #include "tractor_ctrl.h"
+#include "inclinometer.h"
 
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 {
@@ -35,14 +36,21 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
             continue;
         }
 
-        // 2. 继电器模块 (标准帧 0x101)
+        // 2. VALUER 倾角角度传感器 (标准帧 0x18B / INCLINOMETER_PDO1_CAN_ID)
+        if (can_id == INCLINOMETER_PDO1_CAN_ID || can_id == 0x18B)
+        {
+            Inclinometer_ProcessCAN(can_id, rx_data, dlc);
+            continue;
+        }
+
+        // 3. 继电器模块 (标准帧 0x101)
         if (can_id == 0x101)
         {
             relay_process_can_message(can_id, rx_data, dlc);
             continue;
         }
 
-        // 3. 模拟量采集模块 (标准帧 0x181, 0x281)
+        // 4. 模拟量采集模块 (标准帧 0x181, 0x281)
         if (can_id == 0x181 || can_id == 0x281)
         {
             Analog_Input_Process_CAN(can_id, rx_data, dlc);
