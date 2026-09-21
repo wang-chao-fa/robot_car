@@ -78,7 +78,7 @@ extern kinco_motor_t g_motor_throttle;   // ID 6 (油门电机)
 #define STEER_TRACK_FAST_SPEED_DPS       (90.0f)   // 远距离恒速快速纠偏速度 (度/秒)
 #define STEER_TRACK_SLOW_SPEED_DPS       (15.0f)   // 临近零点最低逼近速度 (度/秒)
 #define STEER_CORRECT_DIR_POLARITY       (-1)      // 【纠偏方向极性】: 1 为正常方向, -1 为反转方向 (已校准为 -1)
-#define STEER_MAX_AUTO_CORRECT_DEG       (250.0f)  // 【防打死安全锁】自动纠偏最大允许微调角度 (度，绝不允许自我转死)
+#define STEER_MAX_AUTO_CORRECT_DEG       (1200.0f) // 【防打死安全锁】自动纠偏最大允许转动角度 (度，允许±3.3圈以覆盖全行程回正)
 
 /* 三档与两档开关解析 */
 typedef enum {
