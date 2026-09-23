@@ -424,7 +424,7 @@ void TractorControl_Failsafe(CAN_HandleTypeDef *hcan)
 
     g_relay_module.states_mask = 0;
     relay_control_all(hcan, 0);
-    MDU_Motor_SetSpeed(hcan, 0.0f);
+    MDU_Motor_SetCalibratedAngle(hcan, 0.0f);
 }
 
 void TractorControl_Update(CAN_HandleTypeDef *hcan)
