@@ -117,7 +117,14 @@ void TractorControl_GetSBUSDemand(tractor_demand_t *demand)
         if (x > 1.0f)  x = 1.0f;
         if (x < -1.0f) x = -1.0f;
         float y = 0.30f * x + 0.70f * (x * x * x);
-        demand->steer_target_deg = y * STEERING_MAX_ANGLE_DEG;
+        if (y >= 0.0f)
+        {
+            demand->steer_target_deg = y * STEERING_MAX_RIGHT_DEG;
+        }
+        else
+        {
+            demand->steer_target_deg = (-y) * STEERING_MAX_LEFT_DEG;
+        }
     }
 }
 
@@ -370,13 +377,15 @@ void TractorControl_ExecuteDemand(CAN_HandleTypeDef *hcan, const tractor_demand_
 
     if (demand->steer_is_neutral)
     {
-        // 摇杆居中: 保持在绝对编码器标定的直行零点 (0.0度)
+        // 摇杆居中: 保持在绝对编码器标定的直行原点 (0.0度)
         final_steer_deg = 0.0f;
     }
     else
     {
-        // 摇杆打方向: 执行目标转向角 (相对于标定零点)
+        // 摇杆打方向: 严格限制在 [左最大目标点, 右最大目标点] 软限位区间内
         final_steer_deg = demand->steer_target_deg;
+        if (final_steer_deg > STEERING_MAX_RIGHT_DEG) final_steer_deg = STEERING_MAX_RIGHT_DEG;
+        if (final_steer_deg < STEERING_MAX_LEFT_DEG)  final_steer_deg = STEERING_MAX_LEFT_DEG;
     }
 
     /* 周期 20ms 连续向下位机方向盘舵机下发目标角度 (连续喂舵机看门狗，且位置变化时即时响应) */
@@ -516,7 +525,14 @@ void TractorControl_Update(CAN_HandleTypeDef *hcan)
                 if (x > 1.0f)  x = 1.0f;
                 if (x < -1.0f) x = -1.0f;
                 float y = 0.30f * x + 0.70f * (x * x * x); // 非线性 S 曲线 (小推力精细，大推力快速)
-                auto_demand.steer_target_deg = y * STEERING_MAX_ANGLE_DEG;
+                if (y >= 0.0f)
+                {
+                    auto_demand.steer_target_deg = y * STEERING_MAX_RIGHT_DEG;
+                }
+                else
+                {
+                    auto_demand.steer_target_deg = (-y) * STEERING_MAX_LEFT_DEG;
+                }
             }
         }
         else

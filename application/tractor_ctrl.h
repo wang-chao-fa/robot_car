@@ -66,8 +66,10 @@ extern kinco_motor_t g_motor_throttle;   // ID 6 (油门电机)
 #define THROTTLE_ABS_MAX_POS      (-162890373)                                 // 油门 100% 最大油门脉冲
 #define THROTTLE_ABS_TOTAL_SPAN   (THROTTLE_ABS_MAX_POS - THROTTLE_ABS_ORIGIN_POS) // 油门总行程脉冲
 
-/* ---------------- 6. 方向盘电机参数 (ID 7) ---------------- */
-#define STEERING_MAX_ANGLE_DEG           1080.0f // 遥控打方向最大转动角度 (±1800度 = ±5圈)
+/* ---------------- 6. 方向盘电机行程与左右极限目标点参数 (ID 7) ---------------- */
+#define STEERING_MAX_LEFT_DEG            (-540.0f) // 【左打满最大目标点】(度，负数，例如 -540° = 向左转 1.5 圈，按拖拉机实际限位设置)
+#define STEERING_MAX_RIGHT_DEG           (+540.0f) // 【右打满最大目标点】(度，正数，例如 +540° = 向右转 1.5 圈，按拖拉机实际限位设置)
+#define STEERING_MAX_ANGLE_DEG           (540.0f)  // 兼容宏定义
 #define SERIAL_AUTO_STEER_MAX_INPUT      (60.0f)   // 上位机遥控打满时的极值 (根据实测上位机下发 ±60.0)
 #define SERIAL_AUTO_STEER_POLARITY       (-1)      // 上位机遥控方向盘极性: 1 为正常, -1 为反向 (如果方向反了直接改成 1)
 
