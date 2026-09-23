@@ -167,13 +167,16 @@ void MDU_Motor_ProcessCANMessage(uint32_t can_id, const uint8_t *data, uint8_t l
             g_mdu_steering_motor.home_captured = 1;
         }
 
-        g_mdu_steering_motor.is_enabled = 1;
-
         if (len >= 8)
         {
             uint16_t err_code = ((uint16_t)data[6] << 8) | data[7];
+            g_mdu_steering_motor.is_enabled = ((data[7] & 0x01) == 0) ? 1 : 0;
             g_mdu_steering_motor.error_flag = (err_code > 0x0001) ? 1 : 0;
             g_mdu_steering_motor.hand_override_flag = (data[6] & 0x04) ? 1 : 0;
+        }
+        else
+        {
+            g_mdu_steering_motor.is_enabled = 1;
         }
     }
     /* 2. 科亚 173 SDO 查询响应报文 (0x05800001 / 0x05800007) */
@@ -213,10 +216,10 @@ void MDU_Motor_Control_Loop(CAN_HandleTypeDef *hcan)
     }
     else
     {
-        /* 运行阶段：仅当舵机掉线超过 2 秒时，才重新触发唤醒重连 */
-        if (g_mdu_steering_motor.last_rx_tick > 0 && (now - g_mdu_steering_motor.last_rx_tick > 2000))
+        /* 运行阶段：若舵机失能(is_enabled==0)或通信掉线，周期性自动恢复使能 */
+        if (!g_mdu_steering_motor.is_enabled || (g_mdu_steering_motor.last_rx_tick > 0 && (now - g_mdu_steering_motor.last_rx_tick > 1000)))
         {
-            if (now - last_check_tick >= 1000)
+            if (now - last_check_tick >= 500)
             {
                 last_check_tick = now;
                 MDU_Motor_Enable(hcan);

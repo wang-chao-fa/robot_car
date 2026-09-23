@@ -379,7 +379,8 @@ void TractorControl_ExecuteDemand(CAN_HandleTypeDef *hcan, const tractor_demand_
         final_steer_deg = demand->steer_target_deg;
     }
 
-    if ((now - last_steer_send_time >= 40) || fabsf(final_steer_deg - last_sent_steer_deg) > 0.1f)
+    /* 周期 20ms 连续向下位机方向盘舵机下发目标角度 (连续喂舵机看门狗，且位置变化时即时响应) */
+    if (now - last_steer_send_time >= 20)
     {
         last_steer_send_time = now;
         last_sent_steer_deg = final_steer_deg;
