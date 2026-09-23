@@ -21,9 +21,7 @@ kinco_motor_t g_motor_throttle;   // ID 6
 float g_steer_closed_loop_adj_deg = 0.0f; // 全局当前前轮残余误差 (度，供串口监视)
 uint8_t g_tractor_control_mode = 0;       // 全局当前控制模式 (0: 遥控手动, 1: 上位机自动)
 
-static float s_steer_auto_target_deg = 0.0f;     // 方向盘纠偏目标累计角度
-static float s_steer_straight_center_deg = 0.0f; // 拖拉机前轮直行中位基准角度
-static uint8_t s_steer_auto_inited = 0;
+// 双倾角纠偏静态变量已清理
 
 /**
   * @brief  前轮分段平滑减速闭环回正计算 (远距离恒速快速纠偏，近距离自动平滑减速防震荡)
