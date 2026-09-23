@@ -119,7 +119,7 @@ void TractorControl_GetSBUSDemand(tractor_demand_t *demand)
         if (x > 1.0f)  x = 1.0f;
         if (x < -1.0f) x = -1.0f;
         float y = 0.30f * x + 0.70f * (x * x * x);
-        demand->steer_target_deg = s_steer_straight_center_deg + (y * STEERING_MAX_ANGLE_DEG);
+        demand->steer_target_deg = y * STEERING_MAX_ANGLE_DEG;
     }
 }
 
