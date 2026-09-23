@@ -36,13 +36,15 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
             continue;
         }
 
-        // 2. VALUER 倾角角度传感器 (前轮 0x18B, 车身底盘 0x18C)
+        // 2. VALUER 倾角角度传感器 (前轮 0x18B, 车身底盘 0x18C) - 已注释停用 (改用方向盘绝对编码零点标定)
+        /*
         if (can_id == INCLINOMETER_WHEEL_CAN_ID || can_id == INCLINOMETER_BODY_CAN_ID ||
             can_id == 0x18B || can_id == 0x18C)
         {
             Inclinometer_ProcessCAN(can_id, rx_data, dlc);
             continue;
         }
+        */
 
         // 3. 继电器模块 (标准帧 0x101)
         if (can_id == 0x101)
@@ -51,12 +53,14 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
             continue;
         }
 
-        // 4. 模拟量采集模块 (标准帧 0x181, 0x281)
+        // 4. 模拟量采集模块 (标准帧 0x181, 0x281) - 已注释停用
+        /*
         if (can_id == 0x181 || can_id == 0x281)
         {
             Analog_Input_Process_CAN(can_id, rx_data, dlc);
             continue;
         }
+        */
 
         // 4. 步科电机 (ID 2~6, 标准帧)
         if (rx_header.IDE == CAN_ID_STD)

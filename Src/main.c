@@ -45,8 +45,8 @@ int main(void)
 
     /* 2. 继电器模块、模拟量采集与倾角传感器初始化 (纯非阻塞) */
     relay_init(0x101);
-    Analog_Input_Init(&hcan1);
-    Inclinometer_Init();
+    // Analog_Input_Init(&hcan1); /* 模拟量传感器已停用 */
+    // Inclinometer_Init(); /* 双倾角传感器已停用 */
 
     /* 3. 上位机自动驾驶协议与 MDU 方向盘电机初始化 */
     Serial_Auto_Init();
@@ -151,17 +151,9 @@ int main(void)
                 int16_t ch8_ster  = SBUS_GetChannel_Mapped(RC_CH_STEERING);
                 uint8_t failsafe_flag = ((now - sbus_last_time) > SBUS_FAILSAFE_TIMEOUT_MS) ? 1 : 0;
 
+                long steer_cal_x10 = (long)(g_mdu_steering_motor.calibrated_angle_deg * 10.0f);
                 long steer_act_x10 = (long)(g_mdu_steering_motor.actual_angle_deg * 10.0f);
                 long steer_tgt_x10 = (long)(g_mdu_steering_motor.target_angle_deg * 10.0f);
-
-                long whl_roll_x100  = (long)(g_inclinometer.roll_deg * 100.0f);
-                long whl_pitch_x100 = (long)(g_inclinometer.pitch_deg * 100.0f);
-                long bod_roll_x100  = (long)(g_inclinometer_body.roll_deg * 100.0f);
-                long bod_pitch_x100 = (long)(g_inclinometer_body.pitch_deg * 100.0f);
-                long diff_roll_x100 = (long)(Inclinometer_GetSteerAngle_Deg() * 100.0f);
-                long comp_x10       = (long)(g_steer_closed_loop_adj_deg * 10.0f);
-                uint8_t whl_ok      = Inclinometer_IsOnline();
-                uint8_t bod_ok      = Inclinometer_Body_IsOnline();
 
                 char *cur_buf = tx_buf[tx_buf_idx];
                 tx_buf_idx = (tx_buf_idx + 1) % 2;
@@ -170,20 +162,14 @@ int main(void)
                     "[RC] G1:%4d G2:%4d Cl:%4d Th:%4d Br:%4d Ac:%4d St:%4d | FS:%d\r\n"
                     "ID2(G2):en=%d st=0x%04X tgt=%ld act=%ld | ID3(Brk):en=%d st=0x%04X tgt=%ld act=%ld\r\n"
                     "ID4(G1):en=%d st=0x%04X tgt=%ld act=%ld | ID5(Clt):en=%d st=0x%04X tgt=%ld act=%ld\r\n"
-                    "ID6(Thr):en=%d st=0x%04X tgt=%ld act=%ld | ID7(Str):en=%d tgt=%ld.%01ld act=%ld.%01ld\r\n"
-                    "[INC-1 Whl:0x18B] On:%d Roll:%ld.%02ld Pitch:%ld.%02ld | [INC-2 Bod:0x18C] On:%d Roll:%ld.%02ld Pitch:%ld.%02ld\r\n"
-                    "[STEER-DIFF] Diff:%ld.%02ld deg | Comp:%ld.%01ld deg\r\n\r\n",
+                    "ID6(Thr):en=%d st=0x%04X tgt=%ld act=%ld | ID7(Str):en=%d tgt=%ld.%01ld cal=%ld.%01ld raw=%ld.%01ld\r\n\r\n",
                     ch1_gear, ch7_gear2, ch2_clut, ch3_thro, ch4_brak, ch6_actu, ch8_ster, failsafe_flag,
                     g_motor_gearshift2.is_enabled, g_motor_gearshift2.statusword, (long)g_motor_gearshift2.target_position, (long)g_motor_gearshift2.actual_position,
                     g_motor_brake.is_enabled, g_motor_brake.statusword, (long)g_motor_brake.target_position, (long)g_motor_brake.actual_position,
                     g_motor_gearshift.is_enabled, g_motor_gearshift.statusword, (long)g_motor_gearshift.target_position, (long)g_motor_gearshift.actual_position,
                     g_motor_clutch.is_enabled, g_motor_clutch.statusword, (long)g_motor_clutch.target_position, (long)g_motor_clutch.actual_position,
                     g_motor_throttle.is_enabled, g_motor_throttle.statusword, (long)g_motor_throttle.target_position, (long)g_motor_throttle.actual_position,
-                    g_mdu_steering_motor.is_enabled, steer_tgt_x10 / 10, labs(steer_tgt_x10 % 10), steer_act_x10 / 10, labs(steer_act_x10 % 10),
-                    whl_ok, whl_roll_x100 / 100, labs(whl_roll_x100 % 100), whl_pitch_x100 / 100, labs(whl_pitch_x100 % 100),
-                    bod_ok, bod_roll_x100 / 100, labs(bod_roll_x100 % 100), bod_pitch_x100 / 100, labs(bod_pitch_x100 % 100),
-                    diff_roll_x100 / 100, labs(diff_roll_x100 % 100),
-                    comp_x10 / 10, labs(comp_x10 % 10)
+                    g_mdu_steering_motor.is_enabled, steer_tgt_x10 / 10, labs(steer_tgt_x10 % 10), steer_cal_x10 / 10, labs(steer_cal_x10 % 10), steer_act_x10 / 10, labs(steer_act_x10 % 10)
                 );
 
                 if (len > 0)

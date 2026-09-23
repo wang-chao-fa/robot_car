@@ -6,7 +6,7 @@
   */
 #include "tractor_ctrl.h"
 #include "analog_input.h"
-#include "inclinometer.h"
+/* #include "inclinometer.h" */ // 双倾角传感器已停用
 #include "auto_serial_ctrl.h"
 #include <stdlib.h>
 #include <math.h>
@@ -30,75 +30,17 @@ static uint8_t s_steer_auto_inited = 0;
   * @param  dt 计算周期 (秒)
   * @return 方向盘舵机目标位置 (度)
   */
+/* ==============================================================================
+ *  【双倾角传感器闭环纠偏函数已停用注释】
+ *  现已改用方向盘舵机绝对值编码器零点标定，摇杆回中时直接伺服保持在标定 0 度！
+ * ============================================================================== */
+/*
 static float Steer_ConstantSpeed_Track(float dt)
 {
-    // 如果倾角传感器掉线，保持当前位置
-    if (!Inclinometer_IsOnline())
-    {
-        return s_steer_auto_target_deg;
-    }
-
-    if (!s_steer_auto_inited)
-    {
-        s_steer_auto_target_deg = g_mdu_steering_motor.actual_angle_deg;
-        s_steer_straight_center_deg = g_mdu_steering_motor.actual_angle_deg;
-        s_steer_auto_inited = 1;
-    }
-
-    // 1. 获取前轮相对车身的差分纯净转向角度 (度: Roll_wheel - Roll_body，已完全抵消坡度)
-    float current_steer_deg = Inclinometer_GetSteerAngle_Deg();
-
-    // 计算当前转向角与直行中位基准 (FRONT_WHEEL_ZERO_DIFF_DEG) 的误差
-    float error = FRONT_WHEEL_ZERO_DIFF_DEG - current_steer_deg;
-    g_steer_closed_loop_adj_deg = error; // 记录残余误差供串口监视显示
-
-    float abs_err = fabsf(error);
-
-    // 2. 前轮死区判断: 在 ±0.20° 以内认为已到达正中零点，完全停转
-    if (abs_err <= STEER_CLOSED_LOOP_DEADBAND_DEG)
-    {
-        // 到达零点死区，锁定并更新直行中位基准
-        s_steer_straight_center_deg = s_steer_auto_target_deg;
-        return s_steer_auto_target_deg;
-    }
-
-    // 3. 分段平滑减速逻辑 (远距离快速推进，快到零点时平滑减速):
-    // 距离远 (> 1.50°): 保持 STEER_TRACK_FAST_SPEED_DPS (90°/s) 快速转动
-    // 距离近 (0.20° ~ 1.50°): 速度线性减小至 STEER_TRACK_SLOW_SPEED_DPS (15°/s)，轻柔逼近零点
-    float current_speed_dps = STEER_TRACK_FAST_SPEED_DPS;
-    if (abs_err < STEER_SLOWDOWN_THRESHOLD_DEG)
-    {
-        float ratio = (abs_err - STEER_CLOSED_LOOP_DEADBAND_DEG) / (STEER_SLOWDOWN_THRESHOLD_DEG - STEER_CLOSED_LOOP_DEADBAND_DEG);
-        if (ratio < 0.0f) ratio = 0.0f;
-        if (ratio > 1.0f) ratio = 1.0f;
-        current_speed_dps = STEER_TRACK_SLOW_SPEED_DPS + ratio * (STEER_TRACK_FAST_SPEED_DPS - STEER_TRACK_SLOW_SPEED_DPS);
-    }
-
-    // 4. 方向盘目标角度积分累加:
-    // STEER_CORRECT_DIR_POLARITY: 1 为正向，-1 为反向
-    float step = (float)STEER_CORRECT_DIR_POLARITY * current_speed_dps * dt;
-    if (error > 0.0f)
-    {
-        s_steer_auto_target_deg += step;
-    }
-    else
-    {
-        s_steer_auto_target_deg -= step;
-    }
-
-    // 5. 【防打死安全锁】: 自动回正相对于中位基准最多允许修正 ±STEER_MAX_AUTO_CORRECT_DEG (±250°)，防止无限转死
-    float span_from_center = s_steer_auto_target_deg - s_steer_straight_center_deg;
-    if (span_from_center > STEER_MAX_AUTO_CORRECT_DEG)
-    {
-        s_steer_auto_target_deg = s_steer_straight_center_deg + STEER_MAX_AUTO_CORRECT_DEG;
-    }
-    else if (span_from_center < -STEER_MAX_AUTO_CORRECT_DEG)
-    {
-        s_steer_auto_target_deg = s_steer_straight_center_deg - STEER_MAX_AUTO_CORRECT_DEG;
-    }
-
-    return s_steer_auto_target_deg;
+    // 双倾角差分回正逻辑已注释停用
+    return 0.0f;
 }
+*/
 
 switch_3pos_t TractorControl_Parse3Pos(int16_t mapped_val)
 {
@@ -430,26 +372,20 @@ void TractorControl_ExecuteDemand(CAN_HandleTypeDef *hcan, const tractor_demand_
 
     if (demand->steer_is_neutral)
     {
-        // 摇杆居中: 启用恒速自动纠偏回正
-        float dt = (last_steer_send_time == 0) ? 0.04f : ((float)(now - last_steer_send_time) / 1000.0f);
-        if (dt <= 0.001f || dt > 0.2f) dt = 0.04f;
-
-        final_steer_deg = Steer_ConstantSpeed_Track(dt);
+        // 摇杆居中: 保持在绝对编码器标定的直行零点 (0.0度)
+        final_steer_deg = 0.0f;
     }
     else
     {
-        // 摇杆打方向: 手动遥控绝对优先
+        // 摇杆打方向: 执行目标转向角 (相对于标定零点)
         final_steer_deg = demand->steer_target_deg;
-        // 手动打方向时同步当前位置，松手回中时从当前方向盘实际位置平滑开始恒速纠偏
-        s_steer_auto_target_deg = g_mdu_steering_motor.actual_angle_deg;
-        g_steer_closed_loop_adj_deg = 0.0f;
     }
 
     if ((now - last_steer_send_time >= 40) || fabsf(final_steer_deg - last_sent_steer_deg) > 0.1f)
     {
         last_steer_send_time = now;
         last_sent_steer_deg = final_steer_deg;
-        MDU_Motor_SetAngle(hcan, final_steer_deg);
+        MDU_Motor_SetCalibratedAngle(hcan, final_steer_deg); // 自动叠加 zero_offset 下发
     }
 }
 
@@ -581,7 +517,7 @@ void TractorControl_Update(CAN_HandleTypeDef *hcan)
                 if (x > 1.0f)  x = 1.0f;
                 if (x < -1.0f) x = -1.0f;
                 float y = 0.30f * x + 0.70f * (x * x * x); // 非线性 S 曲线 (小推力精细，大推力快速)
-                auto_demand.steer_target_deg = s_steer_straight_center_deg + (y * STEERING_MAX_ANGLE_DEG);
+                auto_demand.steer_target_deg = y * STEERING_MAX_ANGLE_DEG;
             }
         }
         else
